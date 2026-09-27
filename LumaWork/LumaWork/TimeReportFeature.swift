@@ -5,6 +5,7 @@ struct TimeReportScreen: View {
     let store: TimeReportStore
     let simpleOneStore: SimpleOneRequestsStore
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var simpleOnePassword = ""
     @State private var isRefreshingFromSimpleOne = false
     @State private var simpleOneProgressFraction = 0.0
@@ -38,6 +39,7 @@ struct TimeReportScreen: View {
                 }
 
                 summaryCard
+                    .depthStackPrimary(reduceMotion: reduceMotion)
 
                 if store.snapshot == nil {
                     AppEmptyState(
@@ -53,6 +55,7 @@ struct TimeReportScreen: View {
                     )
                 } else {
                     monthGroupsCard
+                        .depthStackSecondary()
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

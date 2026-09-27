@@ -376,6 +376,7 @@ struct BackpackScreen: View {
     let coordinationStore: CoordinationStore
     let equipmentStore: OfficeEquipmentStore
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var store: BackpackStore
     @State private var photoStore = BackpackPhotoStore()
     @State private var locationStore = BackpackItemLocationStore()
@@ -452,9 +453,11 @@ struct BackpackScreen: View {
                         showsEquipment = true
                     }
                 )
+                .depthStackPrimary(reduceMotion: reduceMotion)
 
                 if let errorMessage = store.errorMessage {
                     AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
+                        .depthStackSecondary()
                 }
 
                 if !store.isLoading && store.items.isEmpty {
@@ -465,6 +468,7 @@ struct BackpackScreen: View {
                             description: Text("Оборудование по текущему фильтру пока не найдено. Обновите список, чтобы проверить снова.")
                         )
                     }
+                    .depthStackSecondary()
                 }
 
                 if !store.isLoading,
@@ -478,6 +482,7 @@ struct BackpackScreen: View {
                             description: Text("Для фильтра «\(selectedLocationFilter.title)» ничего не найдено.")
                         )
                     }
+                    .depthStackSecondary()
                 }
 
                 if !groups.isEmpty {
@@ -492,6 +497,7 @@ struct BackpackScreen: View {
                             }
                         }
                     }
+                    .depthStackSecondary()
                 }
             }
         }

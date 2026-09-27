@@ -32,6 +32,7 @@ coverage/
 *.md
 *.MD
 
+
 # Local exports and business data must never be committed.
 outputs/
 *.xlsx

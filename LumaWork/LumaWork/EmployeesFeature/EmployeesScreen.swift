@@ -5,6 +5,7 @@ struct EmployeesScreen: View {
     let workScheduleStore: WorkScheduleStore
     let profileCity: String?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var store: SimpleOneEmployeesStore
     @State private var searchText = ""
     @State private var isAddressPickerPresented = false
@@ -64,6 +65,7 @@ struct EmployeesScreen: View {
                         AppHaptics.trigger(.expandCollapse)
                         isAddressPickerPresented = true
                     }
+                    .depthStackPrimary(reduceMotion: reduceMotion)
                 }
 
                 if let errorMessage = store.errorMessage {
@@ -72,6 +74,7 @@ struct EmployeesScreen: View {
                         tint: AppTheme.dangerTint,
                         isCritical: true
                     )
+                    .depthStackSecondary()
                 }
 
                 if store.didBootstrap, store.selectedAddress == nil {
@@ -82,6 +85,7 @@ struct EmployeesScreen: View {
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 36)
+                    .depthStackSecondary()
                 } else if store.didBootstrap,
                           store.selectedAddress != nil,
                           store.employees.isEmpty {
@@ -98,6 +102,7 @@ struct EmployeesScreen: View {
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 36)
+                    .depthStackSecondary()
                 } else if !groups.isEmpty {
                     EmployeeAlphabetDirectory(
                         groups: groups,
@@ -105,6 +110,7 @@ struct EmployeesScreen: View {
                         store: store,
                         authKey: simpleOneStore.browserAuthKey
                     )
+                    .depthStackSecondary()
                 }
             }
         }

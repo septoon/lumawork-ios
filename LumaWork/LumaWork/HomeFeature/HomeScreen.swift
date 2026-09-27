@@ -18,6 +18,7 @@ struct HomeScreen: View {
     let onRefresh: () async -> Void
     let onOpenActiveRequests: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isProfilePresented = false
     @State private var isCalendarPresented = false
     @State private var isRoutesArchivePresented = false
@@ -76,8 +77,13 @@ struct HomeScreen: View {
 
             if routeStore.workType == .pos {
                 activeRequestsCard
+                    .depthStackPrimary(reduceMotion: reduceMotion)
             }
             dayControlsCard
+                .depthStackPrimary(
+                    reduceMotion: reduceMotion,
+                    stage: routeStore.workType == .pos ? 1 : 0
+                )
 
             RouteTimelineCard(
                 stops: routeStore.record.stops,
@@ -110,6 +116,7 @@ struct HomeScreen: View {
                     AppClipboard.copy(routeStore.routeSettings.address(for: kind), message: "Адрес скопирован")
                 }
             )
+            .depthStackSecondary(stage: routeStore.workType == .pos ? 2 : 1)
 
         }
         .appLoadingOverlay(

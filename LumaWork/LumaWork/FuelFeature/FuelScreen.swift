@@ -6,6 +6,7 @@ struct FuelScreen: View {
     let store: FuelStore
     let userEmail: String
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedYear: String?
     @State private var draft = FuelDraft()
     @State private var editingRecord: FuelRecord?
@@ -25,17 +26,21 @@ struct FuelScreen: View {
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     mainSection
+                        .depthStackPrimary(reduceMotion: reduceMotion, pinY: 14)
 
                     if !store.records.isEmpty {
                         analyticsNavigationSection
+                            .depthStackSecondary()
                     }
 
                     if projection.summary.hasData, !filteredMonths.isEmpty {
                         monthlyDetailsSection
+                            .depthStackSecondary()
                     }
 
                     if FuelArchivePolicy.isAvailable(for: userEmail) {
                         archiveNavigationSection
+                            .depthStackSecondary()
                     }
                 }
                 .padding(.horizontal, 14)

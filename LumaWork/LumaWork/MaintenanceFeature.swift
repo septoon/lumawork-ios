@@ -269,6 +269,7 @@ struct MaintenanceScreen: View {
 
     let store: MaintenanceStore
     @Bindable var vehicleStore: VehicleStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var draft = MaintenanceDraft()
     @State private var editingRecord: MaintenanceRecord?
     @State private var isEditorPresented = false
@@ -286,46 +287,52 @@ struct MaintenanceScreen: View {
                         vehicleFlow = .edit(vehicle)
                     }
                     .padding(.horizontal, -16)
+                    .depthStackPrimary(reduceMotion: reduceMotion, pinY: -17)
 
-                    if let errorMessage = vehicleStore.errorMessage {
-                        AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
-                    }
+                    AppCard {
+                        VStack(alignment: .leading, spacing: 18) {
+                            if let errorMessage = vehicleStore.errorMessage {
+                                AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
+                            }
 
-                    maintenanceOverview
+                            maintenanceOverview
 
-                    if let errorMessage = store.errorMessage {
-                        AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
-                    }
+                            if let errorMessage = store.errorMessage {
+                                AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
+                            }
 
-                    if !store.isLoading, selectedRecords.isEmpty, vehicleStore.selectedVehicle != nil {
-                        AppEmptyState(
-                            title: "Записей пока нет",
-                            message: "Добавьте первое обслуживание выбранного автомобиля.",
-                            systemName: "wrench.and.screwdriver"
-                        )
-                    }
+                            if !store.isLoading, selectedRecords.isEmpty, vehicleStore.selectedVehicle != nil {
+                                AppEmptyState(
+                                    title: "Записей пока нет",
+                                    message: "Добавьте первое обслуживание выбранного автомобиля.",
+                                    systemName: "wrench.and.screwdriver"
+                                )
+                            }
 
-                    if !selectedRecords.isEmpty {
-                        Label("ИСТОРИЯ", systemImage: "clock.arrow.circlepath")
-                            .font(.caption.weight(.bold))
-                            .tracking(0.8)
-                            .foregroundStyle(AppTheme.mutedTint)
-                            .padding(.top, 2)
-                    }
+                            if !selectedRecords.isEmpty {
+                                Label("ИСТОРИЯ", systemImage: "clock.arrow.circlepath")
+                                    .font(.caption.weight(.bold))
+                                    .tracking(0.8)
+                                    .foregroundStyle(AppTheme.mutedTint)
+                                    .padding(.top, 2)
+                            }
 
-                    ForEach(Array(selectedRecords.enumerated()), id: \.element.stableID) { index, record in
-                        Button {
-                            editingRecord = record
-                            draft = MaintenanceDraft(record: record, fallbackVehicleID: vehicleStore.selectedVehicleID)
-                            isEditorPresented = true
-                        } label: {
-                            MaintenanceTimelineRow(
-                                record: record,
-                                isLast: index == selectedRecords.count - 1
-                            )
+                            ForEach(Array(selectedRecords.enumerated()), id: \.element.stableID) { index, record in
+                                Button {
+                                    editingRecord = record
+                                    draft = MaintenanceDraft(record: record, fallbackVehicleID: vehicleStore.selectedVehicleID)
+                                    isEditorPresented = true
+                                } label: {
+                                    MaintenanceTimelineRow(
+                                        record: record,
+                                        isLast: index == selectedRecords.count - 1
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
-                        .buttonStyle(.plain)
                     }
+                    .depthStackSecondary()
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, -17)
