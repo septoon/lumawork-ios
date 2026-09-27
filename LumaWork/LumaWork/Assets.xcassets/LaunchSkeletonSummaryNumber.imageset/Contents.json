@@ -1,0 +1,26 @@
+{
+  "images": [
+    {
+      "filename": "LaunchSkeletonSummaryNumber-light.svg",
+      "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "LaunchSkeletonSummaryNumber-dark.svg",
+      "idiom": "universal"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "preserves-vector-representation": true
+  }
+}
+

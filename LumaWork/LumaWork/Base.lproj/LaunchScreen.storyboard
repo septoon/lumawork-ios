@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="26000" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="launch-controller">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="26000"/>
+        <capability name="Named colors" minToolsVersion="9.0"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="System colors in document resources" minToolsVersion="11.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <scene sceneID="launch-scene">
+            <objects>
+                <viewController id="launch-controller" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="launch-root">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleToFill" image="HomeLaunchBackground" translatesAutoresizingMaskIntoConstraints="NO" id="launch-background">
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                            </imageView>
+
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="menu-placeholder">
+                                <rect key="frame" x="8" y="59" width="44" height="44"/>
+                                <subviews>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchMenuCircle" translatesAutoresizingMaskIntoConstraints="NO" id="menu-circle">
+                                        <rect key="frame" x="0.0" y="0.0" width="44" height="44"/>
+                                    </imageView>
+                                    <view translatesAutoresizingMaskIntoConstraints="NO" id="menu-wide-line">
+                                        <rect key="frame" x="11" y="13" width="22" height="3"/>
+                                        <color key="backgroundColor" name="AppInk"/>
+                                        <constraints><constraint firstAttribute="width" constant="22" id="menu-wide-width"/><constraint firstAttribute="height" constant="3" id="menu-wide-height"/></constraints>
+                                    </view>
+                                    <view translatesAutoresizingMaskIntoConstraints="NO" id="menu-short-line">
+                                        <rect key="frame" x="11" y="24" width="13.2" height="3"/>
+                                        <color key="backgroundColor" name="AppInk"/>
+                                        <constraints><constraint firstAttribute="width" constant="13.2" id="menu-short-width"/><constraint firstAttribute="height" constant="3" id="menu-short-height"/></constraints>
+                                    </view>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstItem="menu-circle" firstAttribute="leading" secondItem="menu-placeholder" secondAttribute="leading" id="menu-circle-leading"/>
+                                    <constraint firstItem="menu-circle" firstAttribute="trailing" secondItem="menu-placeholder" secondAttribute="trailing" id="menu-circle-trailing"/>
+                                    <constraint firstItem="menu-circle" firstAttribute="top" secondItem="menu-placeholder" secondAttribute="top" id="menu-circle-top"/>
+                                    <constraint firstItem="menu-circle" firstAttribute="bottom" secondItem="menu-placeholder" secondAttribute="bottom" id="menu-circle-bottom"/>
+                                    <constraint firstItem="menu-wide-line" firstAttribute="leading" secondItem="menu-placeholder" secondAttribute="leading" constant="11" id="menu-wide-leading"/>
+                                    <constraint firstItem="menu-wide-line" firstAttribute="top" secondItem="menu-placeholder" secondAttribute="top" constant="13" id="menu-wide-top"/>
+                                    <constraint firstItem="menu-short-line" firstAttribute="leading" secondItem="menu-placeholder" secondAttribute="leading" constant="11" id="menu-short-leading"/>
+                                    <constraint firstItem="menu-short-line" firstAttribute="top" secondItem="menu-wide-line" secondAttribute="bottom" constant="8" id="menu-short-top"/>
+                                    <constraint firstAttribute="width" constant="44" id="menu-width"/>
+                                    <constraint firstAttribute="height" constant="44" id="menu-height"/>
+                                </constraints>
+                            </view>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonNavTitle" translatesAutoresizingMaskIntoConstraints="NO" id="navigation-title-placeholder">
+                                <rect key="frame" x="160.5" y="73" width="72" height="16"/>
+                                <constraints><constraint firstAttribute="width" constant="72" id="navigation-title-width"/><constraint firstAttribute="height" constant="16" id="navigation-title-height"/></constraints>
+                            </imageView>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonCircle44" translatesAutoresizingMaskIntoConstraints="NO" id="avatar-placeholder">
+                                <rect key="frame" x="341" y="59" width="44" height="44"/>
+                                <constraints><constraint firstAttribute="width" constant="44" id="avatar-width"/><constraint firstAttribute="height" constant="44" id="avatar-height"/></constraints>
+                            </imageView>
+
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="requests-card">
+                                <rect key="frame" x="16" y="115" width="361" height="264"/>
+                                <subviews>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchRequestsCardSurface" translatesAutoresizingMaskIntoConstraints="NO" id="requests-card-background"><rect key="frame" x="0.0" y="0.0" width="361" height="264"/></imageView>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonHeaderTitle" translatesAutoresizingMaskIntoConstraints="NO" id="requests-title"><rect key="frame" x="18" y="18" width="154" height="23"/><constraints><constraint firstAttribute="width" constant="154" id="requests-title-width"/><constraint firstAttribute="height" constant="23" id="requests-title-height"/></constraints></imageView>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonHeaderCaption" translatesAutoresizingMaskIntoConstraints="NO" id="requests-caption"><rect key="frame" x="18" y="45" width="104" height="19"/><constraints><constraint firstAttribute="width" constant="104" id="requests-caption-width"/><constraint firstAttribute="height" constant="19" id="requests-caption-height"/></constraints></imageView>
+                                    <stackView opaque="NO" contentMode="scaleToFill" distribution="fillEqually" spacing="7" translatesAutoresizingMaskIntoConstraints="NO" id="metrics-stack">
+                                        <rect key="frame" x="18" y="74" width="325" height="58"/>
+                                        <subviews>
+                                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="metric-one">
+                                                <rect key="frame" x="0.0" y="0.0" width="103.5" height="58"/>
+                                                <subviews>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchMetricSurface" translatesAutoresizingMaskIntoConstraints="NO" id="metric-one-background"><rect key="frame" x="0.0" y="0.0" width="103.5" height="58"/></imageView>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonMetricLabel" translatesAutoresizingMaskIntoConstraints="NO" id="metric-one-label"><rect key="frame" x="9" y="8" width="42" height="12"/><constraints><constraint firstAttribute="width" constant="42" id="metric-one-label-width"/><constraint firstAttribute="height" constant="12" id="metric-one-label-height"/></constraints></imageView>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonMetricValue" translatesAutoresizingMaskIntoConstraints="NO" id="metric-one-value"><rect key="frame" x="9" y="25" width="24" height="23"/><constraints><constraint firstAttribute="width" constant="24" id="metric-one-value-width"/><constraint firstAttribute="height" constant="23" id="metric-one-value-height"/></constraints></imageView>
+                                                </subviews>
+                                                <constraints>
+                                                    <constraint firstItem="metric-one-background" firstAttribute="leading" secondItem="metric-one" secondAttribute="leading" id="metric-one-background-leading"/><constraint firstItem="metric-one-background" firstAttribute="trailing" secondItem="metric-one" secondAttribute="trailing" id="metric-one-background-trailing"/><constraint firstItem="metric-one-background" firstAttribute="top" secondItem="metric-one" secondAttribute="top" id="metric-one-background-top"/><constraint firstItem="metric-one-background" firstAttribute="bottom" secondItem="metric-one" secondAttribute="bottom" id="metric-one-background-bottom"/>
+                                                    <constraint firstItem="metric-one-label" firstAttribute="leading" secondItem="metric-one" secondAttribute="leading" constant="9" id="metric-one-label-leading"/><constraint firstItem="metric-one-label" firstAttribute="top" secondItem="metric-one" secondAttribute="top" constant="8" id="metric-one-label-top"/><constraint firstItem="metric-one-value" firstAttribute="leading" secondItem="metric-one" secondAttribute="leading" constant="9" id="metric-one-value-leading"/><constraint firstItem="metric-one-value" firstAttribute="top" secondItem="metric-one-label" secondAttribute="bottom" constant="5" id="metric-one-value-top"/>
+                                                </constraints>
+                                            </view>
+                                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="metric-two">
+                                                <rect key="frame" x="110.5" y="0.0" width="104" height="58"/>
+                                                <subviews>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchMetricSurface" translatesAutoresizingMaskIntoConstraints="NO" id="metric-two-background"><rect key="frame" x="0.0" y="0.0" width="104" height="58"/></imageView>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonMetricWideLabel" translatesAutoresizingMaskIntoConstraints="NO" id="metric-two-label"><rect key="frame" x="9" y="8" width="52" height="12"/><constraints><constraint firstAttribute="width" constant="52" id="metric-two-label-width"/><constraint firstAttribute="height" constant="12" id="metric-two-label-height"/></constraints></imageView>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonMetricValue" translatesAutoresizingMaskIntoConstraints="NO" id="metric-two-value"><rect key="frame" x="9" y="25" width="24" height="23"/><constraints><constraint firstAttribute="width" constant="24" id="metric-two-value-width"/><constraint firstAttribute="height" constant="23" id="metric-two-value-height"/></constraints></imageView>
+                                                </subviews>
+                                                <constraints>
+                                                    <constraint firstItem="metric-two-background" firstAttribute="leading" secondItem="metric-two" secondAttribute="leading" id="metric-two-background-leading"/><constraint firstItem="metric-two-background" firstAttribute="trailing" secondItem="metric-two" secondAttribute="trailing" id="metric-two-background-trailing"/><constraint firstItem="metric-two-background" firstAttribute="top" secondItem="metric-two" secondAttribute="top" id="metric-two-background-top"/><constraint firstItem="metric-two-background" firstAttribute="bottom" secondItem="metric-two" secondAttribute="bottom" id="metric-two-background-bottom"/>
+                                                    <constraint firstItem="metric-two-label" firstAttribute="leading" secondItem="metric-two" secondAttribute="leading" constant="9" id="metric-two-label-leading"/><constraint firstItem="metric-two-label" firstAttribute="top" secondItem="metric-two" secondAttribute="top" constant="8" id="metric-two-label-top"/><constraint firstItem="metric-two-value" firstAttribute="leading" secondItem="metric-two" secondAttribute="leading" constant="9" id="metric-two-value-leading"/><constraint firstItem="metric-two-value" firstAttribute="top" secondItem="metric-two-label" secondAttribute="bottom" constant="5" id="metric-two-value-top"/>
+                                                </constraints>
+                                            </view>
+                                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="metric-three">
+                                                <rect key="frame" x="221.5" y="0.0" width="103.5" height="58"/>
+                                                <subviews>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchMetricSurface" translatesAutoresizingMaskIntoConstraints="NO" id="metric-three-background"><rect key="frame" x="0.0" y="0.0" width="103.5" height="58"/></imageView>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonMetricLabel" translatesAutoresizingMaskIntoConstraints="NO" id="metric-three-label"><rect key="frame" x="9" y="8" width="42" height="12"/><constraints><constraint firstAttribute="width" constant="42" id="metric-three-label-width"/><constraint firstAttribute="height" constant="12" id="metric-three-label-height"/></constraints></imageView>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonMetricValue" translatesAutoresizingMaskIntoConstraints="NO" id="metric-three-value"><rect key="frame" x="9" y="25" width="24" height="23"/><constraints><constraint firstAttribute="width" constant="24" id="metric-three-value-width"/><constraint firstAttribute="height" constant="23" id="metric-three-value-height"/></constraints></imageView>
+                                                </subviews>
+                                                <constraints>
+                                                    <constraint firstItem="metric-three-background" firstAttribute="leading" secondItem="metric-three" secondAttribute="leading" id="metric-three-background-leading"/><constraint firstItem="metric-three-background" firstAttribute="trailing" secondItem="metric-three" secondAttribute="trailing" id="metric-three-background-trailing"/><constraint firstItem="metric-three-background" firstAttribute="top" secondItem="metric-three" secondAttribute="top" id="metric-three-background-top"/><constraint firstItem="metric-three-background" firstAttribute="bottom" secondItem="metric-three" secondAttribute="bottom" id="metric-three-background-bottom"/>
+                                                    <constraint firstItem="metric-three-label" firstAttribute="leading" secondItem="metric-three" secondAttribute="leading" constant="9" id="metric-three-label-leading"/><constraint firstItem="metric-three-label" firstAttribute="top" secondItem="metric-three" secondAttribute="top" constant="8" id="metric-three-label-top"/><constraint firstItem="metric-three-value" firstAttribute="leading" secondItem="metric-three" secondAttribute="leading" constant="9" id="metric-three-value-leading"/><constraint firstItem="metric-three-value" firstAttribute="top" secondItem="metric-three-label" secondAttribute="bottom" constant="5" id="metric-three-value-top"/>
+                                                </constraints>
+                                            </view>
+                                        </subviews>
+                                        <constraints><constraint firstAttribute="height" constant="58" id="metrics-height"/></constraints>
+                                    </stackView>
+                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="request-summary">
+                                        <rect key="frame" x="18" y="142" width="325" height="104"/>
+                                        <subviews>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSummarySurface" translatesAutoresizingMaskIntoConstraints="NO" id="request-summary-background"><rect key="frame" x="0.0" y="0.0" width="325" height="104"/></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonSummaryNumber" translatesAutoresizingMaskIntoConstraints="NO" id="summary-number"><rect key="frame" x="11" y="11" width="92" height="19"/><constraints><constraint firstAttribute="width" constant="92" id="summary-number-width"/><constraint firstAttribute="height" constant="19" id="summary-number-height"/></constraints></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonSummaryBadge" translatesAutoresizingMaskIntoConstraints="NO" id="summary-badge"><rect key="frame" x="248" y="11" width="66" height="19"/><constraints><constraint firstAttribute="width" constant="66" id="summary-badge-width"/><constraint firstAttribute="height" constant="19" id="summary-badge-height"/></constraints></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonSummaryLine" translatesAutoresizingMaskIntoConstraints="NO" id="summary-description"><rect key="frame" x="11" y="37" width="303" height="14"/><constraints><constraint firstAttribute="height" constant="14" id="summary-description-height"/></constraints></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonSummaryDeadline" translatesAutoresizingMaskIntoConstraints="NO" id="summary-deadline"><rect key="frame" x="11" y="58" width="132" height="14"/><constraints><constraint firstAttribute="width" constant="132" id="summary-deadline-width"/><constraint firstAttribute="height" constant="14" id="summary-deadline-height"/></constraints></imageView>
+                                            <stackView opaque="NO" contentMode="scaleToFill" distribution="fillEqually" spacing="12" translatesAutoresizingMaskIntoConstraints="NO" id="summary-meta-stack">
+                                                <rect key="frame" x="11" y="79" width="303" height="14"/>
+                                                <subviews>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonSummaryMeta" translatesAutoresizingMaskIntoConstraints="NO" id="summary-person"><rect key="frame" x="0.0" y="0.0" width="145.5" height="14"/></imageView>
+                                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonSummaryMeta" translatesAutoresizingMaskIntoConstraints="NO" id="summary-address"><rect key="frame" x="157.5" y="0.0" width="145.5" height="14"/></imageView>
+                                                </subviews>
+                                                <constraints><constraint firstAttribute="height" constant="14" id="summary-meta-height"/></constraints>
+                                            </stackView>
+                                        </subviews>
+                                        <constraints>
+                                            <constraint firstItem="request-summary-background" firstAttribute="leading" secondItem="request-summary" secondAttribute="leading" id="request-summary-background-leading"/><constraint firstItem="request-summary-background" firstAttribute="trailing" secondItem="request-summary" secondAttribute="trailing" id="request-summary-background-trailing"/><constraint firstItem="request-summary-background" firstAttribute="top" secondItem="request-summary" secondAttribute="top" id="request-summary-background-top"/><constraint firstItem="request-summary-background" firstAttribute="bottom" secondItem="request-summary" secondAttribute="bottom" id="request-summary-background-bottom"/>
+                                            <constraint firstItem="summary-number" firstAttribute="leading" secondItem="request-summary" secondAttribute="leading" constant="11" id="summary-number-leading"/><constraint firstItem="summary-number" firstAttribute="top" secondItem="request-summary" secondAttribute="top" constant="11" id="summary-number-top"/><constraint firstAttribute="trailing" secondItem="summary-badge" secondAttribute="trailing" constant="11" id="summary-badge-trailing"/><constraint firstItem="summary-badge" firstAttribute="top" secondItem="request-summary" secondAttribute="top" constant="11" id="summary-badge-top"/>
+                                            <constraint firstItem="summary-description" firstAttribute="leading" secondItem="request-summary" secondAttribute="leading" constant="11" id="summary-description-leading"/><constraint firstAttribute="trailing" secondItem="summary-description" secondAttribute="trailing" constant="11" id="summary-description-trailing"/><constraint firstItem="summary-description" firstAttribute="top" secondItem="summary-number" secondAttribute="bottom" constant="7" id="summary-description-top"/>
+                                            <constraint firstItem="summary-deadline" firstAttribute="leading" secondItem="request-summary" secondAttribute="leading" constant="11" id="summary-deadline-leading"/><constraint firstItem="summary-deadline" firstAttribute="top" secondItem="summary-description" secondAttribute="bottom" constant="7" id="summary-deadline-top"/>
+                                            <constraint firstItem="summary-meta-stack" firstAttribute="leading" secondItem="request-summary" secondAttribute="leading" constant="11" id="summary-meta-leading"/><constraint firstAttribute="trailing" secondItem="summary-meta-stack" secondAttribute="trailing" constant="11" id="summary-meta-trailing"/><constraint firstItem="summary-meta-stack" firstAttribute="top" secondItem="summary-deadline" secondAttribute="bottom" constant="7" id="summary-meta-top"/>
+                                            <constraint firstAttribute="height" constant="104" id="request-summary-height"/>
+                                        </constraints>
+                                    </view>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstItem="requests-card-background" firstAttribute="leading" secondItem="requests-card" secondAttribute="leading" id="requests-background-leading"/><constraint firstItem="requests-card-background" firstAttribute="trailing" secondItem="requests-card" secondAttribute="trailing" id="requests-background-trailing"/><constraint firstItem="requests-card-background" firstAttribute="top" secondItem="requests-card" secondAttribute="top" id="requests-background-top"/><constraint firstItem="requests-card-background" firstAttribute="bottom" secondItem="requests-card" secondAttribute="bottom" id="requests-background-bottom"/>
+                                    <constraint firstItem="requests-title" firstAttribute="leading" secondItem="requests-card" secondAttribute="leading" constant="18" id="requests-title-leading"/><constraint firstItem="requests-title" firstAttribute="top" secondItem="requests-card" secondAttribute="top" constant="18" id="requests-title-top"/><constraint firstItem="requests-caption" firstAttribute="leading" secondItem="requests-card" secondAttribute="leading" constant="18" id="requests-caption-leading"/><constraint firstItem="requests-caption" firstAttribute="top" secondItem="requests-title" secondAttribute="bottom" constant="4" id="requests-caption-top"/>
+                                    <constraint firstItem="metrics-stack" firstAttribute="leading" secondItem="requests-card" secondAttribute="leading" constant="18" id="metrics-leading"/><constraint firstAttribute="trailing" secondItem="metrics-stack" secondAttribute="trailing" constant="18" id="metrics-trailing"/><constraint firstItem="metrics-stack" firstAttribute="top" secondItem="requests-caption" secondAttribute="bottom" constant="10" id="metrics-top"/>
+                                    <constraint firstItem="request-summary" firstAttribute="leading" secondItem="requests-card" secondAttribute="leading" constant="18" id="request-summary-leading"/><constraint firstAttribute="trailing" secondItem="request-summary" secondAttribute="trailing" constant="18" id="request-summary-trailing"/><constraint firstItem="request-summary" firstAttribute="top" secondItem="metrics-stack" secondAttribute="bottom" constant="10" id="request-summary-top"/><constraint firstAttribute="bottom" secondItem="request-summary" secondAttribute="bottom" constant="18" id="request-summary-bottom"/>
+                                    <constraint firstAttribute="height" constant="264" id="requests-card-height"/>
+                                </constraints>
+                            </view>
+
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="day-card">
+                                <rect key="frame" x="16" y="397" width="361" height="221"/>
+                                <subviews>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchDayCardSurface" translatesAutoresizingMaskIntoConstraints="NO" id="day-card-background"><rect key="frame" x="0.0" y="0.0" width="361" height="221"/></imageView>
+                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="day-header">
+                                        <rect key="frame" x="18" y="18" width="325" height="47"/>
+                                        <subviews>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonDayCaption" translatesAutoresizingMaskIntoConstraints="NO" id="day-caption"><rect key="frame" x="0.0" y="0.0" width="86" height="15"/><constraints><constraint firstAttribute="width" constant="86" id="day-caption-width"/><constraint firstAttribute="height" constant="15" id="day-caption-height"/></constraints></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonDayDate" translatesAutoresizingMaskIntoConstraints="NO" id="day-date"><rect key="frame" x="0.0" y="19" width="146" height="28"/><constraints><constraint firstAttribute="width" constant="146" id="day-date-width"/><constraint firstAttribute="height" constant="28" id="day-date-height"/></constraints></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonDayAction" translatesAutoresizingMaskIntoConstraints="NO" id="day-action"><rect key="frame" x="243" y="6.5" width="82" height="34"/><constraints><constraint firstAttribute="width" constant="82" id="day-action-width"/><constraint firstAttribute="height" constant="34" id="day-action-height"/></constraints></imageView>
+                                        </subviews>
+                                        <constraints><constraint firstItem="day-caption" firstAttribute="leading" secondItem="day-header" secondAttribute="leading" id="day-caption-leading"/><constraint firstItem="day-caption" firstAttribute="top" secondItem="day-header" secondAttribute="top" id="day-caption-top"/><constraint firstItem="day-date" firstAttribute="leading" secondItem="day-header" secondAttribute="leading" id="day-date-leading"/><constraint firstItem="day-date" firstAttribute="top" secondItem="day-caption" secondAttribute="bottom" constant="4" id="day-date-top"/><constraint firstAttribute="trailing" secondItem="day-action" secondAttribute="trailing" id="day-action-trailing"/><constraint firstItem="day-action" firstAttribute="centerY" secondItem="day-header" secondAttribute="centerY" id="day-action-center-y"/><constraint firstAttribute="height" constant="47" id="day-header-height"/></constraints>
+                                    </view>
+                                    <view translatesAutoresizingMaskIntoConstraints="NO" id="day-divider-one"><rect key="frame" x="18" y="79" width="325" height="1"/><color key="backgroundColor" name="AppBorder"/><constraints><constraint firstAttribute="height" constant="1" id="day-divider-one-height"/></constraints></view>
+                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="mileage-row">
+                                        <rect key="frame" x="18" y="94" width="325" height="42"/>
+                                        <subviews>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonMileageLabel" translatesAutoresizingMaskIntoConstraints="NO" id="mileage-label"><rect key="frame" x="0.0" y="11.5" width="102" height="19"/><constraints><constraint firstAttribute="width" constant="102" id="mileage-label-width"/><constraint firstAttribute="height" constant="19" id="mileage-label-height"/></constraints></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchMileageSurface" translatesAutoresizingMaskIntoConstraints="NO" id="mileage-field"><rect key="frame" x="171" y="0.0" width="82" height="42"/><constraints><constraint firstAttribute="width" constant="82" id="mileage-field-width"/><constraint firstAttribute="height" constant="42" id="mileage-field-height"/></constraints></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonMileageUnit" translatesAutoresizingMaskIntoConstraints="NO" id="mileage-unit"><rect key="frame" x="262" y="11.5" width="20" height="19"/><constraints><constraint firstAttribute="width" constant="20" id="mileage-unit-width"/><constraint firstAttribute="height" constant="19" id="mileage-unit-height"/></constraints></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonCircle34" translatesAutoresizingMaskIntoConstraints="NO" id="mileage-map"><rect key="frame" x="291" y="4" width="34" height="34"/><constraints><constraint firstAttribute="width" constant="34" id="mileage-map-width"/><constraint firstAttribute="height" constant="34" id="mileage-map-height"/></constraints></imageView>
+                                        </subviews>
+                                        <constraints><constraint firstItem="mileage-label" firstAttribute="leading" secondItem="mileage-row" secondAttribute="leading" id="mileage-label-leading"/><constraint firstItem="mileage-label" firstAttribute="centerY" secondItem="mileage-row" secondAttribute="centerY" id="mileage-label-center-y"/><constraint firstAttribute="trailing" secondItem="mileage-map" secondAttribute="trailing" id="mileage-map-trailing"/><constraint firstItem="mileage-map" firstAttribute="centerY" secondItem="mileage-row" secondAttribute="centerY" id="mileage-map-center-y"/><constraint firstItem="mileage-unit" firstAttribute="trailing" secondItem="mileage-map" secondAttribute="leading" constant="9" id="mileage-unit-trailing"/><constraint firstItem="mileage-unit" firstAttribute="centerY" secondItem="mileage-row" secondAttribute="centerY" id="mileage-unit-center-y"/><constraint firstItem="mileage-field" firstAttribute="trailing" secondItem="mileage-unit" secondAttribute="leading" constant="9" id="mileage-field-trailing"/><constraint firstItem="mileage-field" firstAttribute="centerY" secondItem="mileage-row" secondAttribute="centerY" id="mileage-field-center-y"/><constraint firstAttribute="height" constant="42" id="mileage-row-height"/></constraints>
+                                    </view>
+                                    <view translatesAutoresizingMaskIntoConstraints="NO" id="day-divider-two"><rect key="frame" x="18" y="150" width="325" height="1"/><color key="backgroundColor" name="AppBorder"/><constraints><constraint firstAttribute="height" constant="1" id="day-divider-two-height"/></constraints></view>
+                                    <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="odometer-row">
+                                        <rect key="frame" x="18" y="165" width="325" height="38"/>
+                                        <subviews>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonOdometerLabel" translatesAutoresizingMaskIntoConstraints="NO" id="odometer-label"><rect key="frame" x="0.0" y="9.5" width="138" height="19"/><constraints><constraint firstAttribute="width" constant="138" id="odometer-label-width"/><constraint firstAttribute="height" constant="19" id="odometer-label-height"/></constraints></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonOdometerValue" translatesAutoresizingMaskIntoConstraints="NO" id="odometer-value"><rect key="frame" x="237" y="9.5" width="70" height="19"/><constraints><constraint firstAttribute="width" constant="70" id="odometer-value-width"/><constraint firstAttribute="height" constant="19" id="odometer-value-height"/></constraints></imageView>
+                                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonChevron" translatesAutoresizingMaskIntoConstraints="NO" id="odometer-chevron"><rect key="frame" x="317" y="12" width="8" height="14"/><constraints><constraint firstAttribute="width" constant="8" id="odometer-chevron-width"/><constraint firstAttribute="height" constant="14" id="odometer-chevron-height"/></constraints></imageView>
+                                        </subviews>
+                                        <constraints><constraint firstItem="odometer-label" firstAttribute="leading" secondItem="odometer-row" secondAttribute="leading" id="odometer-label-leading"/><constraint firstItem="odometer-label" firstAttribute="centerY" secondItem="odometer-row" secondAttribute="centerY" id="odometer-label-center-y"/><constraint firstAttribute="trailing" secondItem="odometer-chevron" secondAttribute="trailing" id="odometer-chevron-trailing"/><constraint firstItem="odometer-chevron" firstAttribute="centerY" secondItem="odometer-row" secondAttribute="centerY" id="odometer-chevron-center-y"/><constraint firstItem="odometer-value" firstAttribute="trailing" secondItem="odometer-chevron" secondAttribute="leading" constant="10" id="odometer-value-trailing"/><constraint firstItem="odometer-value" firstAttribute="centerY" secondItem="odometer-row" secondAttribute="centerY" id="odometer-value-center-y"/><constraint firstAttribute="height" constant="38" id="odometer-row-height"/></constraints>
+                                    </view>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstItem="day-card-background" firstAttribute="leading" secondItem="day-card" secondAttribute="leading" id="day-background-leading"/><constraint firstItem="day-card-background" firstAttribute="trailing" secondItem="day-card" secondAttribute="trailing" id="day-background-trailing"/><constraint firstItem="day-card-background" firstAttribute="top" secondItem="day-card" secondAttribute="top" id="day-background-top"/><constraint firstItem="day-card-background" firstAttribute="bottom" secondItem="day-card" secondAttribute="bottom" id="day-background-bottom"/>
+                                    <constraint firstItem="day-header" firstAttribute="leading" secondItem="day-card" secondAttribute="leading" constant="18" id="day-header-leading"/><constraint firstAttribute="trailing" secondItem="day-header" secondAttribute="trailing" constant="18" id="day-header-trailing"/><constraint firstItem="day-header" firstAttribute="top" secondItem="day-card" secondAttribute="top" constant="18" id="day-header-top"/>
+                                    <constraint firstItem="day-divider-one" firstAttribute="leading" secondItem="day-card" secondAttribute="leading" constant="18" id="day-divider-one-leading"/><constraint firstAttribute="trailing" secondItem="day-divider-one" secondAttribute="trailing" constant="18" id="day-divider-one-trailing"/><constraint firstItem="day-divider-one" firstAttribute="top" secondItem="day-header" secondAttribute="bottom" constant="14" id="day-divider-one-top"/>
+                                    <constraint firstItem="mileage-row" firstAttribute="leading" secondItem="day-card" secondAttribute="leading" constant="18" id="mileage-row-leading"/><constraint firstAttribute="trailing" secondItem="mileage-row" secondAttribute="trailing" constant="18" id="mileage-row-trailing"/><constraint firstItem="mileage-row" firstAttribute="top" secondItem="day-divider-one" secondAttribute="bottom" constant="14" id="mileage-row-top"/>
+                                    <constraint firstItem="day-divider-two" firstAttribute="leading" secondItem="day-card" secondAttribute="leading" constant="18" id="day-divider-two-leading"/><constraint firstAttribute="trailing" secondItem="day-divider-two" secondAttribute="trailing" constant="18" id="day-divider-two-trailing"/><constraint firstItem="day-divider-two" firstAttribute="top" secondItem="mileage-row" secondAttribute="bottom" constant="14" id="day-divider-two-top"/>
+                                    <constraint firstItem="odometer-row" firstAttribute="leading" secondItem="day-card" secondAttribute="leading" constant="18" id="odometer-row-leading"/><constraint firstAttribute="trailing" secondItem="odometer-row" secondAttribute="trailing" constant="18" id="odometer-row-trailing"/><constraint firstItem="odometer-row" firstAttribute="top" secondItem="day-divider-two" secondAttribute="bottom" constant="14" id="odometer-row-top"/><constraint firstAttribute="bottom" secondItem="odometer-row" secondAttribute="bottom" constant="18" id="odometer-row-bottom"/>
+                                    <constraint firstAttribute="height" constant="221" id="day-card-height"/>
+                                </constraints>
+                            </view>
+
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="route-card">
+                                <rect key="frame" x="16" y="636" width="361" height="122"/>
+                                <subviews>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchRouteCardSurface" translatesAutoresizingMaskIntoConstraints="NO" id="route-card-background"><rect key="frame" x="0.0" y="0.0" width="361" height="122"/></imageView>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonRouteTitle" translatesAutoresizingMaskIntoConstraints="NO" id="route-title"><rect key="frame" x="18" y="18" width="62" height="20"/><constraints><constraint firstAttribute="width" constant="62" id="route-title-width"/><constraint firstAttribute="height" constant="20" id="route-title-height"/></constraints></imageView>
+                                    <stackView opaque="NO" contentMode="scaleToFill" distribution="fillEqually" spacing="8" translatesAutoresizingMaskIntoConstraints="NO" id="route-endpoints">
+                                        <rect key="frame" x="18" y="52" width="325" height="52"/>
+                                        <subviews><imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchEndpointSurface" translatesAutoresizingMaskIntoConstraints="NO" id="route-endpoint-one"><rect key="frame" x="0.0" y="0.0" width="158.5" height="52"/></imageView><imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchEndpointSurface" translatesAutoresizingMaskIntoConstraints="NO" id="route-endpoint-two"><rect key="frame" x="166.5" y="0.0" width="158.5" height="52"/></imageView></subviews>
+                                        <constraints><constraint firstAttribute="height" constant="52" id="route-endpoints-height"/></constraints>
+                                    </stackView>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstItem="route-card-background" firstAttribute="leading" secondItem="route-card" secondAttribute="leading" id="route-background-leading"/><constraint firstItem="route-card-background" firstAttribute="trailing" secondItem="route-card" secondAttribute="trailing" id="route-background-trailing"/><constraint firstItem="route-card-background" firstAttribute="top" secondItem="route-card" secondAttribute="top" id="route-background-top"/><constraint firstItem="route-card-background" firstAttribute="bottom" secondItem="route-card" secondAttribute="bottom" id="route-background-bottom"/>
+                                    <constraint firstItem="route-title" firstAttribute="leading" secondItem="route-card" secondAttribute="leading" constant="18" id="route-title-leading"/><constraint firstItem="route-title" firstAttribute="top" secondItem="route-card" secondAttribute="top" constant="18" id="route-title-top"/><constraint firstItem="route-endpoints" firstAttribute="leading" secondItem="route-card" secondAttribute="leading" constant="18" id="route-endpoints-leading"/><constraint firstAttribute="trailing" secondItem="route-endpoints" secondAttribute="trailing" constant="18" id="route-endpoints-trailing"/><constraint firstItem="route-endpoints" firstAttribute="top" secondItem="route-title" secondAttribute="bottom" constant="14" id="route-endpoints-top"/><constraint firstAttribute="bottom" secondItem="route-endpoints" secondAttribute="bottom" constant="18" id="route-endpoints-bottom"/>
+                                    <constraint firstAttribute="height" constant="122" id="route-card-height"/>
+                                </constraints>
+                            </view>
+
+                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchSkeletonSend" translatesAutoresizingMaskIntoConstraints="NO" id="send-placeholder">
+                                <rect key="frame" x="20" y="756" width="353" height="42"/>
+                                <constraints><constraint firstAttribute="height" constant="42" id="send-height"/></constraints>
+                            </imageView>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="safe-area"/>
+                        <color key="backgroundColor" name="AppBackgroundTop"/>
+                        <constraints>
+                            <constraint firstItem="launch-background" firstAttribute="leading" secondItem="launch-root" secondAttribute="leading" id="background-leading"/><constraint firstItem="launch-background" firstAttribute="trailing" secondItem="launch-root" secondAttribute="trailing" id="background-trailing"/><constraint firstItem="launch-background" firstAttribute="top" secondItem="launch-root" secondAttribute="top" id="background-top"/><constraint firstItem="launch-background" firstAttribute="bottom" secondItem="launch-root" secondAttribute="bottom" id="background-bottom"/>
+                            <constraint firstItem="menu-placeholder" firstAttribute="leading" secondItem="safe-area" secondAttribute="leading" constant="8" id="menu-leading"/><constraint firstItem="menu-placeholder" firstAttribute="top" secondItem="safe-area" secondAttribute="top" id="menu-top"/>
+                            <constraint firstItem="navigation-title-placeholder" firstAttribute="centerX" secondItem="launch-root" secondAttribute="centerX" id="navigation-title-center-x"/><constraint firstItem="navigation-title-placeholder" firstAttribute="top" secondItem="safe-area" secondAttribute="top" constant="14" id="navigation-title-top"/>
+                            <constraint firstItem="safe-area" firstAttribute="trailing" secondItem="avatar-placeholder" secondAttribute="trailing" constant="8" id="avatar-trailing"/><constraint firstItem="avatar-placeholder" firstAttribute="top" secondItem="safe-area" secondAttribute="top" id="avatar-top"/>
+                            <constraint firstItem="requests-card" firstAttribute="leading" secondItem="safe-area" secondAttribute="leading" constant="16" id="requests-leading"/><constraint firstItem="safe-area" firstAttribute="trailing" secondItem="requests-card" secondAttribute="trailing" constant="16" id="requests-trailing"/><constraint firstItem="requests-card" firstAttribute="top" secondItem="safe-area" secondAttribute="top" constant="56" id="requests-top"/>
+                            <constraint firstItem="day-card" firstAttribute="leading" secondItem="safe-area" secondAttribute="leading" constant="16" id="day-leading"/><constraint firstItem="safe-area" firstAttribute="trailing" secondItem="day-card" secondAttribute="trailing" constant="16" id="day-trailing"/><constraint firstItem="day-card" firstAttribute="top" secondItem="requests-card" secondAttribute="bottom" constant="18" id="day-top"/>
+                            <constraint firstItem="route-card" firstAttribute="leading" secondItem="safe-area" secondAttribute="leading" constant="16" id="route-leading"/><constraint firstItem="safe-area" firstAttribute="trailing" secondItem="route-card" secondAttribute="trailing" constant="16" id="route-trailing"/><constraint firstItem="route-card" firstAttribute="top" secondItem="day-card" secondAttribute="bottom" constant="18" id="route-top"/>
+                            <constraint firstItem="send-placeholder" firstAttribute="leading" secondItem="safe-area" secondAttribute="leading" constant="20" id="send-leading"/><constraint firstItem="safe-area" firstAttribute="trailing" secondItem="send-placeholder" secondAttribute="trailing" constant="20" id="send-trailing"/><constraint firstItem="safe-area" firstAttribute="bottom" secondItem="send-placeholder" secondAttribute="bottom" constant="20" id="send-bottom"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="first-responder" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="53" y="375"/>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="HomeLaunchBackground" width="430" height="932"/>
+        <image name="LaunchRequestsCardSurface" width="398" height="264"/>
+        <image name="LaunchDayCardSurface" width="398" height="221"/>
+        <image name="LaunchRouteCardSurface" width="398" height="122"/>
+        <image name="LaunchMetricSurface" width="116" height="58"/>
+        <image name="LaunchSummarySurface" width="362" height="104"/>
+        <image name="LaunchMileageSurface" width="82" height="42"/>
+        <image name="LaunchEndpointSurface" width="177" height="52"/>
+        <image name="LaunchMenuCircle" width="44" height="44"/>
+        <image name="LaunchSkeletonCircle44" width="44" height="44"/>
+        <image name="LaunchSkeletonCircle34" width="34" height="34"/>
+        <image name="LaunchSkeletonNavTitle" width="72" height="16"/>
+        <image name="LaunchSkeletonHeaderTitle" width="154" height="23"/>
+        <image name="LaunchSkeletonHeaderCaption" width="104" height="19"/>
+        <image name="LaunchSkeletonMetricLabel" width="42" height="12"/>
+        <image name="LaunchSkeletonMetricWideLabel" width="52" height="12"/>
+        <image name="LaunchSkeletonMetricValue" width="24" height="23"/>
+        <image name="LaunchSkeletonSummaryNumber" width="92" height="19"/>
+        <image name="LaunchSkeletonSummaryBadge" width="66" height="19"/>
+        <image name="LaunchSkeletonSummaryLine" width="340" height="14"/>
+        <image name="LaunchSkeletonSummaryDeadline" width="132" height="14"/>
+        <image name="LaunchSkeletonSummaryMeta" width="164" height="14"/>
+        <image name="LaunchSkeletonDayCaption" width="86" height="15"/>
+        <image name="LaunchSkeletonDayDate" width="146" height="28"/>
+        <image name="LaunchSkeletonDayAction" width="82" height="34"/>
+        <image name="LaunchSkeletonMileageLabel" width="102" height="19"/>
+        <image name="LaunchSkeletonMileageUnit" width="20" height="19"/>
+        <image name="LaunchSkeletonOdometerLabel" width="138" height="19"/>
+        <image name="LaunchSkeletonOdometerValue" width="70" height="19"/>
+        <image name="LaunchSkeletonChevron" width="8" height="14"/>
+        <image name="LaunchSkeletonRouteTitle" width="62" height="20"/>
+        <image name="LaunchSkeletonSend" width="390" height="42"/>
+        <namedColor name="AppBackgroundTop"><color red="0.98" green="0.97" blue="0.93" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor>
+        <namedColor name="AppBorder"><color red="1" green="1" blue="1" alpha="0.62" colorSpace="custom" customColorSpace="sRGB"/></namedColor>
+        <namedColor name="AppCardSurface"><color red="1" green="1" blue="1" alpha="0.86" colorSpace="custom" customColorSpace="sRGB"/></namedColor>
+        <namedColor name="AppInk"><color red="0.12" green="0.14" blue="0.15" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor>
+        <namedColor name="AppSkeletonBase"><color red="0.78" green="0.80" blue="0.77" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor>
+    </resources>
+</document>
