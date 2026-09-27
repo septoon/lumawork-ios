@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-enum AppLocale {
+nonisolated enum AppLocale {
     static let russian = Locale(identifier: "ru_RU")
 }
 
@@ -263,6 +263,7 @@ enum AppTheme {
 struct AppScreen<Content: View>: View {
     @AppStorage(AppBackgroundSettings.colorEnabledKey) private var isBackgroundColorEnabled = true
     private let content: () -> Content
+    private let fixedTopContent: (() -> AnyView)?
     private let bottomContentPadding: CGFloat
     private let keyboardDismissMode: ScrollDismissesKeyboardMode
     private let sizeChangeScrollAnchor: UnitPoint?
@@ -282,6 +283,25 @@ struct AppScreen<Content: View>: View {
         self.sizeChangeScrollAnchor = sizeChangeScrollAnchor
         self.onScrollDirectionChange = onScrollDirectionChange
         self.onBottomProximityChange = onBottomProximityChange
+        self.fixedTopContent = nil
+        self.content = content
+    }
+
+    init<FixedTopContent: View>(
+        bottomContentPadding: CGFloat = 28,
+        keyboardDismissMode: ScrollDismissesKeyboardMode = .automatic,
+        sizeChangeScrollAnchor: UnitPoint? = nil,
+        onScrollDirectionChange: ((AppVerticalScrollDirection) -> Void)? = nil,
+        onBottomProximityChange: ((Bool) -> Void)? = nil,
+        @ViewBuilder fixedTopContent: @escaping () -> FixedTopContent,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.bottomContentPadding = bottomContentPadding
+        self.keyboardDismissMode = keyboardDismissMode
+        self.sizeChangeScrollAnchor = sizeChangeScrollAnchor
+        self.onScrollDirectionChange = onScrollDirectionChange
+        self.onBottomProximityChange = onBottomProximityChange
+        self.fixedTopContent = { AnyView(fixedTopContent()) }
         self.content = content
     }
 
@@ -313,6 +333,11 @@ struct AppScreen<Content: View>: View {
                 .padding(.bottom, bottomContentPadding)
             }
             .scrollDismissesKeyboard(keyboardDismissMode)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let fixedTopContent {
+                    fixedTopContent()
+                }
+            }
             .defaultScrollAnchor(sizeChangeScrollAnchor, for: .sizeChanges)
             .appObserveBottomProximity(isEnabled: onBottomProximityChange != nil) { isNearBottom in
                 onBottomProximityChange?(isNearBottom)

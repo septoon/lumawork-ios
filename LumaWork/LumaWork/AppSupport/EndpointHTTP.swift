@@ -42,7 +42,7 @@ enum AppBuildIdentity {
     }
 }
 
-enum NetworkDiagnostics {
+nonisolated enum NetworkDiagnostics {
     static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "LumaWork", category: "network")
 
     static func logRequest(_ request: URLRequest, body: Any?) {

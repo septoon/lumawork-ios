@@ -21,7 +21,7 @@ struct TimeReportScreen: View {
 
     var body: some View {
         AppScreen {
-            LazyVStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 12) {
                 if let errorMessage = store.errorMessage {
                     AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
                 }

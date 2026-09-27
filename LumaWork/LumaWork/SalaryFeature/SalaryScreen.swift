@@ -9,6 +9,7 @@ struct SalaryScreen: View {
 
     private let legacySlipStore = LegacySalarySlipStore()
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(SalaryPasscodeSettings.storageKey) private var savedPasscode = ""
     @AppStorage("salary-amount-hidden") private var isAmountHidden = false
     @State private var isPasscodePresented = false
@@ -27,22 +28,29 @@ struct SalaryScreen: View {
 
     var body: some View {
         AppScreen {
-            if let errorMessage = store.errorMessage {
-                AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
-            }
-            if filteredMonths.isEmpty {
-                AppEmptyState(
-                    title: "Нет записей по зарплате",
-                    message: "Добавьте первую выплату, чтобы увидеть месячные сводки.",
-                    systemName: "rublesign.circle"
-                )
-            } else {
-                summarySection
-                SalaryAnalyticsCard(
-                    months: projection.monthsDescending,
-                    isAmountHidden: isAmountHidden
-                )
-                periodsSection
+            VStack(alignment: .leading, spacing: 18) {
+                if let errorMessage = store.errorMessage {
+                    AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
+                }
+                if filteredMonths.isEmpty {
+                    AppEmptyState(
+                        title: "Нет записей по зарплате",
+                        message: "Добавьте первую выплату, чтобы увидеть месячные сводки.",
+                        systemName: "rublesign.circle"
+                    )
+                } else {
+                    summarySection
+                        .depthStackPrimary(reduceMotion: reduceMotion)
+
+                    SalaryAnalyticsCard(
+                        months: projection.monthsDescending,
+                        isAmountHidden: isAmountHidden
+                    )
+                    .depthStackSecondary()
+
+                    periodsSection
+                        .depthStackSecondary()
+                }
             }
         }
         .navigationTitle("Зарплата")

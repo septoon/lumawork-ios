@@ -280,7 +280,7 @@ struct MaintenanceScreen: View {
             AutoScreenBackdrop()
 
             ScrollView(showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 18) {
                     VehicleCarousel(store: vehicleStore) {
                         vehicleFlow = .add
                     } editAction: { vehicle in

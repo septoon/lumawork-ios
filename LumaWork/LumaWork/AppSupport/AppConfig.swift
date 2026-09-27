@@ -1,6 +1,6 @@
 import Foundation
 
-struct AppConfig {
+nonisolated struct AppConfig {
     let wikiAPIOrigin: String?
     let wikiAPIToken: String?
     let lumaWorkAPIOrigin: String?

@@ -465,7 +465,7 @@ nonisolated enum ClosedRequestCompletionStatus: String, Sendable {
     }
 }
 
-extension ClosedRequestRecord {
+nonisolated extension ClosedRequestRecord {
     var completionStatus: ClosedRequestCompletionStatus {
         let normalizedClosureCode = (closureCode ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)

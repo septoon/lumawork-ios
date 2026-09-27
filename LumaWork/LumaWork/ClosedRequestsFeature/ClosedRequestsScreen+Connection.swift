@@ -520,8 +520,12 @@ extension ClosedRequestsScreen {
                 )
             } else {
                 LazyVStack(alignment: .leading, spacing: 16) {
-                    ForEach(records) { item in
+                    ForEach(Array(records.enumerated()), id: \.element.id) { index, item in
                         simpleOneRequestCard(item)
+                            .depthStackPrimary(
+                                reduceMotion: reduceMotion,
+                                stage: index
+                            )
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -24,7 +24,7 @@ struct FuelScreen: View {
                 .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 18) {
                     mainSection
                         .depthStackPrimary(reduceMotion: reduceMotion, pinY: 14)
 

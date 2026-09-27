@@ -10,6 +10,7 @@ struct ClosedRequestsScreen: View {
     let requestedActiveRequestID: String?
     let onRequestedActiveRequestHandled: (String) -> Void
 
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
     @AppStorage("ClosedRequestsScreen.activeStatusFilter")
     var activeStatusFilterRaw = ActiveRequestsStatusFilter.available.rawValue
 
@@ -67,7 +68,33 @@ struct ClosedRequestsScreen: View {
     }
 
     var body: some View {
-        AppScreen {
+        AppScreen(fixedTopContent: {
+            if simpleOneStore.isAuthorized {
+                switch requestsMode {
+                case .active:
+                    activeRequestsHeader
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                case .closed:
+                    if !store.isLoadingSnapshot, !closedRequests.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            closedRequestsHeader
+
+                            if let currentDay = paginatedDayGroups.first {
+                                ClosedRequestDayHeader(
+                                    title: currentDay.title,
+                                    caption: currentDay.caption
+                                )
+                            }
+                        }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                    }
+                case .warehouse, .closedSimpleOne:
+                    EmptyView()
+                }
+            }
+        }) {
             requestsScreenContent
         }
         .navigationTitle("Заявки")
@@ -511,8 +538,6 @@ private extension ClosedRequestsScreen {
                     .frame(maxWidth: .infinity, minHeight: 420, alignment: .center)
             } else {
                 VStack(alignment: .leading, spacing: 16) {
-                    activeRequestsHeader
-
                     simpleOneRequestsContent(
                         emptyTitle: "Активных заявок нет",
                         emptyMessage: simpleOneStore.isAuthorized
@@ -548,8 +573,6 @@ private extension ClosedRequestsScreen {
                 systemName: "checklist.checked"
             )
         } else {
-            closedRequestsHeader
-
             if filteredRecordsCache.isEmpty {
                 AppEmptyState(
                     title: closedRequestsEmptyTitle,
@@ -559,9 +582,15 @@ private extension ClosedRequestsScreen {
             } else {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     ForEach(paginatedDayGroups) { group in
-                        ClosedRequestDayHeader(title: group.title, caption: group.caption)
+                        if group.id != paginatedDayGroups.first?.id {
+                            ClosedRequestDayHeader(title: group.title, caption: group.caption)
+                        }
                         ForEach(group.records) { record in
                             requestCard(record)
+                                .depthStackPrimary(
+                                    reduceMotion: reduceMotion,
+                                    stage: closedRequestDepthStages[record.id, default: 0]
+                                )
                         }
                     }
                 }
@@ -572,6 +601,14 @@ private extension ClosedRequestsScreen {
                 }
             }
         }
+    }
+
+    var closedRequestDepthStages: [String: Int] {
+        Dictionary(
+            uniqueKeysWithValues: paginatedRecords.enumerated().map { index, record in
+                (record.id, index)
+            }
+        )
     }
 
     var closedRequestsEmptyTitle: String {

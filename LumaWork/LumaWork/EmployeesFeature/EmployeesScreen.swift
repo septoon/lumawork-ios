@@ -47,70 +47,72 @@ struct EmployeesScreen: View {
 
     var body: some View {
         AppScreen {
-            if !simpleOneStore.isAuthorized {
-                AppEmptyState(
-                    title: "SimpleOne не подключён",
-                    message: "Войдите в SimpleOne на экране «Заявки», затем вернитесь к сотрудникам.",
-                    systemName: "person.crop.circle.badge.exclamationmark"
-                )
-            } else if !store.didBootstrap || store.isLoading {
-                EmployeeDirectoryLoadingView()
-            } else {
-                if let address = store.selectedAddress {
-                    EmployeeDirectoryHero(
-                        address: address,
-                        employees: store.employees,
-                        totalCount: store.totalCount
-                    ) {
-                        AppHaptics.trigger(.expandCollapse)
-                        isAddressPickerPresented = true
+            VStack(alignment: .leading, spacing: 18) {
+                if !simpleOneStore.isAuthorized {
+                    AppEmptyState(
+                        title: "SimpleOne не подключён",
+                        message: "Войдите в SimpleOne на экране «Заявки», затем вернитесь к сотрудникам.",
+                        systemName: "person.crop.circle.badge.exclamationmark"
+                    )
+                } else if !store.didBootstrap || store.isLoading {
+                    EmployeeDirectoryLoadingView()
+                } else {
+                    if let address = store.selectedAddress {
+                        EmployeeDirectoryHero(
+                            address: address,
+                            employees: store.employees,
+                            totalCount: store.totalCount
+                        ) {
+                            AppHaptics.trigger(.expandCollapse)
+                            isAddressPickerPresented = true
+                        }
+                        .depthStackPrimary(reduceMotion: reduceMotion)
                     }
-                    .depthStackPrimary(reduceMotion: reduceMotion)
-                }
 
-                if let errorMessage = store.errorMessage {
-                    AppNoticeBanner(
-                        text: errorMessage,
-                        tint: AppTheme.dangerTint,
-                        isCritical: true
-                    )
-                    .depthStackSecondary()
-                }
-
-                if store.didBootstrap, store.selectedAddress == nil {
-                    ContentUnavailableView(
-                        "Выберите населённый пункт",
-                        systemImage: "mappin.and.ellipse",
-                        description: Text("Откройте фильтр вверху экрана и сохраните населённый пункт.")
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 36)
-                    .depthStackSecondary()
-                } else if store.didBootstrap,
-                          store.selectedAddress != nil,
-                          store.employees.isEmpty {
-                    ContentUnavailableView(
-                        searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? "Сотрудников пока нет"
-                            : "Результатов пока нет",
-                        systemImage: "person.2.slash",
-                        description: Text(
-                            searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                ? "Обновите список или выберите другой населённый пункт."
-                                : "Измените запрос, повторите поиск или выберите другой населённый пункт."
+                    if let errorMessage = store.errorMessage {
+                        AppNoticeBanner(
+                            text: errorMessage,
+                            tint: AppTheme.dangerTint,
+                            isCritical: true
                         )
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 36)
-                    .depthStackSecondary()
-                } else if !groups.isEmpty {
-                    EmployeeAlphabetDirectory(
-                        groups: groups,
-                        currentUserID: store.currentUserID,
-                        store: store,
-                        authKey: simpleOneStore.browserAuthKey
-                    )
-                    .depthStackSecondary()
+                        .depthStackSecondary()
+                    }
+
+                    if store.didBootstrap, store.selectedAddress == nil {
+                        ContentUnavailableView(
+                            "Выберите населённый пункт",
+                            systemImage: "mappin.and.ellipse",
+                            description: Text("Откройте фильтр вверху экрана и сохраните населённый пункт.")
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 36)
+                        .depthStackSecondary()
+                    } else if store.didBootstrap,
+                              store.selectedAddress != nil,
+                              store.employees.isEmpty {
+                        ContentUnavailableView(
+                            searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? "Сотрудников пока нет"
+                                : "Результатов пока нет",
+                            systemImage: "person.2.slash",
+                            description: Text(
+                                searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? "Обновите список или выберите другой населённый пункт."
+                                    : "Измените запрос, повторите поиск или выберите другой населённый пункт."
+                            )
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 36)
+                        .depthStackSecondary()
+                    } else if !groups.isEmpty {
+                        EmployeeAlphabetDirectory(
+                            groups: groups,
+                            currentUserID: store.currentUserID,
+                            store: store,
+                            authKey: simpleOneStore.browserAuthKey
+                        )
+                        .depthStackSecondary()
+                    }
                 }
             }
         }

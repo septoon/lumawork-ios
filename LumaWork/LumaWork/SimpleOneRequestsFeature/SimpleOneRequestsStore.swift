@@ -771,10 +771,12 @@ final class SimpleOneRequestsStore {
         _ entry: SimpleOneDetailedRequestCacheEntry,
         comparedTo record: SimpleOneRequestRecord
     ) -> Bool {
-        let cachedVersion = entry.record.sysUpdatedAt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let currentVersion = record.sysUpdatedAt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !currentVersion.isEmpty else { return false }
-        return cachedVersion == currentVersion
+        SimpleOneDetailedRequestCachePolicy.isFresh(
+            cachedAt: entry.cachedAt,
+            cachedVersion: entry.record.sysUpdatedAt ?? "",
+            currentVersion: record.sysUpdatedAt ?? "",
+            lifetime: detailedRequestCacheLifetime
+        )
     }
 
     private func preservingAssignedUserID(

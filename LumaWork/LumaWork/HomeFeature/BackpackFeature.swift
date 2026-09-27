@@ -436,68 +436,70 @@ struct BackpackScreen: View {
 
     var body: some View {
         AppScreen(bottomContentPadding: 0) {
-            if !simpleOneStore.isAuthorized {
-                AppEmptyState(
-                    title: "SimpleOne не подключён",
-                    message: "Войдите в SimpleOne на экране «Заявки», затем вернитесь в рюкзак.",
-                    systemName: "person.crop.circle.badge.exclamationmark"
-                )
-            } else {
-                BackpackInventoryHeader(
-                    itemCount: totalQuantity,
-                    modelCount: groups.count,
-                    selectedLocation: $selectedLocationFilter,
-                    lastUpdatedAt: store.lastUpdatedAt,
-                    onOpenEquipment: {
-                        AppHaptics.trigger()
-                        showsEquipment = true
-                    }
-                )
-                .depthStackPrimary(reduceMotion: reduceMotion)
+            VStack(alignment: .leading, spacing: 18) {
+                if !simpleOneStore.isAuthorized {
+                    AppEmptyState(
+                        title: "SimpleOne не подключён",
+                        message: "Войдите в SimpleOne на экране «Заявки», затем вернитесь в рюкзак.",
+                        systemName: "person.crop.circle.badge.exclamationmark"
+                    )
+                } else {
+                    BackpackInventoryHeader(
+                        itemCount: totalQuantity,
+                        modelCount: groups.count,
+                        selectedLocation: $selectedLocationFilter,
+                        lastUpdatedAt: store.lastUpdatedAt,
+                        onOpenEquipment: {
+                            AppHaptics.trigger()
+                            showsEquipment = true
+                        }
+                    )
+                    .depthStackPrimary(reduceMotion: reduceMotion)
 
-                if let errorMessage = store.errorMessage {
-                    AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
+                    if let errorMessage = store.errorMessage {
+                        AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
+                            .depthStackSecondary()
+                    }
+
+                    if !store.isLoading && store.items.isEmpty {
+                        AppCard {
+                            ContentUnavailableView(
+                                "Рюкзак пуст",
+                                systemImage: "backpack",
+                                description: Text("Оборудование по текущему фильтру пока не найдено. Обновите список, чтобы проверить снова.")
+                            )
+                        }
                         .depthStackSecondary()
-                }
-
-                if !store.isLoading && store.items.isEmpty {
-                    AppCard {
-                        ContentUnavailableView(
-                            "Рюкзак пуст",
-                            systemImage: "backpack",
-                            description: Text("Оборудование по текущему фильтру пока не найдено. Обновите список, чтобы проверить снова.")
-                        )
                     }
-                    .depthStackSecondary()
-                }
 
-                if !store.isLoading,
-                   !store.items.isEmpty,
-                   groups.isEmpty,
-                   let selectedLocationFilter {
-                    AppCard {
-                        ContentUnavailableView(
-                            "Нет оборудования",
-                            systemImage: selectedLocationFilter.systemImage,
-                            description: Text("Для фильтра «\(selectedLocationFilter.title)» ничего не найдено.")
-                        )
+                    if !store.isLoading,
+                       !store.items.isEmpty,
+                       groups.isEmpty,
+                       let selectedLocationFilter {
+                        AppCard {
+                            ContentUnavailableView(
+                                "Нет оборудования",
+                                systemImage: selectedLocationFilter.systemImage,
+                                description: Text("Для фильтра «\(selectedLocationFilter.title)» ничего не найдено.")
+                            )
+                        }
+                        .depthStackSecondary()
                     }
-                    .depthStackSecondary()
-                }
 
-                if !groups.isEmpty {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                        ForEach(groups) { group in
-                            BackpackInventoryTile(
-                                group: group,
-                                image: photoStore.image(for: group.representativeItem)
-                            ) {
-                                AppHaptics.trigger()
-                                selectedGroup = group
+                    if !groups.isEmpty {
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                            ForEach(groups) { group in
+                                BackpackInventoryTile(
+                                    group: group,
+                                    image: photoStore.image(for: group.representativeItem)
+                                ) {
+                                    AppHaptics.trigger()
+                                    selectedGroup = group
+                                }
                             }
                         }
+                        .depthStackSecondary()
                     }
-                    .depthStackSecondary()
                 }
             }
         }

@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		B5A7C9022F89C0000010AA02 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = B5A7C9042F89C0000010AA04 /* MarkdownUI */; };
-		B5B000042F90000100B00004 /* LumaWorkWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B5B000032F90000100B00003 /* LumaWorkWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B5B000042F90000100B00004 /* LumaWorkWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B5B000032F90000100B00003 /* LumaWorkWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -22,15 +22,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		B5B000052F90000100B00005 /* Embed App Extensions */ = {
+		B5B000052F90000100B00005 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				B5B000042F90000100B00004 /* LumaWorkWidgetExtension.appex in Embed App Extensions */,
+				B5B000042F90000100B00004 /* LumaWorkWidgetExtension.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -122,7 +122,7 @@
 				B5170B372F86DA8500A9C221 /* Sources */,
 				B5170B382F86DA8500A9C221 /* Frameworks */,
 				B5170B392F86DA8500A9C221 /* Resources */,
-				B5B000052F90000100B00005 /* Embed App Extensions */,
+				B5B000052F90000100B00005 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -254,6 +254,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -308,6 +309,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -318,6 +320,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -365,6 +368,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
