@@ -31,7 +31,6 @@ coverage/
 *.patch
 *.md
 *.MD
-!DEPTHSTACK.md
 
 
 # Local exports and business data must never be committed.
