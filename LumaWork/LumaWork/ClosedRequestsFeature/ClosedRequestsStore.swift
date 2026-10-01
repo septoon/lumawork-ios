@@ -610,7 +610,7 @@ final class ClosedRequestsStore {
             || type.contains("возврат")
     }
 
-    nonisolated private static func closedRequestRecord(from record: SimpleOneRequestRecord) -> ClosedRequestRecord {
+    nonisolated static func closedRequestRecord(from record: SimpleOneRequestRecord) -> ClosedRequestRecord {
         let infoFields = simpleOneInfoFields(from: record)
         let merchantTIN = simpleOneInfoValue(for: "ИНН ТСП", in: infoFields)
         let closureCode = simpleOneInfoValue(for: "Код закрытия", in: infoFields)

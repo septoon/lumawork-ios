@@ -11,9 +11,7 @@ nonisolated enum SimpleOneDetailedRequestCachePolicy {
         let normalizedCachedVersion = cachedVersion.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedCurrentVersion = currentVersion.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard !normalizedCurrentVersion.isEmpty else {
-            return now.timeIntervalSince(cachedAt) < lifetime
-        }
+        guard !normalizedCurrentVersion.isEmpty else { return false }
 
         return normalizedCachedVersion == normalizedCurrentVersion
     }

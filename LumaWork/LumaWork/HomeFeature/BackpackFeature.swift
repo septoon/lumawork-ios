@@ -115,6 +115,9 @@ final class BackpackStore {
 
     var items: [BackpackItem] = []
     var isLoading = false
+    var loadingDetailIDs: Set<String> = []
+    var listRevision: UInt64 = 0
+    var photoRevision: UInt64 = 0
     var errorMessage: String?
     var lastUpdatedAt: Date?
 
@@ -144,11 +147,40 @@ final class BackpackStore {
         defer { isLoading = false }
 
         do {
-            let loadedItems = try await service.fetchItems(authKey: authKey, cachedItems: items)
+            let listedItems = try await service.fetchItems(authKey: authKey)
             try Task.checkCancellation()
-            items = loadedItems
+            let cachedByID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
+            items = listedItems.map { item in
+                guard let cached = cachedByID[item.id],
+                      item.receivedAtDate == nil,
+                      item.name == cached.name,
+                      item.serialNumber == cached.serialNumber,
+                      item.responsible == cached.responsible,
+                      item.quantity == cached.quantity else { return item }
+                var item = item
+                item.receivedAt = cached.receivedAt
+                item.receivedAtDate = cached.receivedAtDate
+                return item
+            }
             lastUpdatedAt = Date()
+            listRevision &+= 1
+            photoRevision &+= 1
             AppOfflineSnapshotStore.save(items, key: cacheKey)
+
+            loadingDetailIDs = Set(items.map(\.id))
+            defer { loadingDetailIDs = [] }
+            try await service.hydrateItems(listedItems, cachedItems: Array(cachedByID.values), authKey: authKey) { [weak self] detailed in
+                guard let self else { return }
+                if let index = self.items.firstIndex(where: { $0.id == detailed.id }) {
+                    self.items[index] = detailed
+                }
+                self.loadingDetailIDs.remove(detailed.id)
+            }
+            try Task.checkCancellation()
+            AppOfflineSnapshotStore.save(items, key: cacheKey)
+            if zip(items, listedItems).contains(where: { $0.0.name != $0.1.name }) {
+                photoRevision &+= 1
+            }
         } catch is CancellationError {
             return
         } catch let error as URLError where error.code == .cancelled {
@@ -172,7 +204,7 @@ private struct BackpackService {
         return "(quantity>0^(warehouse.responsible_for_write_offCONTAINS_DYNAMIC\(writeOffDynamicID)^ORactivity.service_managerDYNAMIC\(currentUserDynamicID)^ORactivity.balance_management_managersCONTAINS_DYNAMIC\(writeOffDynamicID)^ORactivity.project_managerDYNAMIC\(currentUserDynamicID)))"
     }
 
-    func fetchItems(authKey: String, cachedItems: [BackpackItem] = []) async throws -> [BackpackItem] {
+    func fetchItems(authKey: String) async throws -> [BackpackItem] {
         var page = 1
         let perPage = 100
         var items: [BackpackItem] = []
@@ -193,7 +225,7 @@ private struct BackpackService {
             page += 1
         }
 
-        return try await detailedItems(items, cachedItems: cachedItems, authKey: authKey).sorted { lhs, rhs in
+        return items.sorted { lhs, rhs in
             switch (lhs.receivedAtDate, rhs.receivedAtDate) {
             case let (lhsDate?, rhsDate?) where lhsDate != rhsDate:
                 return lhsDate > rhsDate
@@ -277,10 +309,14 @@ private struct BackpackService {
         )
     }
 
-    private func detailedItems(_ items: [BackpackItem], cachedItems: [BackpackItem], authKey: String) async throws -> [BackpackItem] {
+    func hydrateItems(
+        _ items: [BackpackItem],
+        cachedItems: [BackpackItem],
+        authKey: String,
+        onItem: @MainActor @Sendable (BackpackItem) -> Void
+    ) async throws {
         let cachedByID = Dictionary(cachedItems.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
-        var result = items
-        let pending = items.enumerated().filter { index, item in
+        let pending = items.filter { item in
             guard let cached = cachedByID[item.id],
                   let version = item.receivedAtDate,
                   version == cached.receivedAtDate,
@@ -288,21 +324,20 @@ private struct BackpackService {
                   item.serialNumber == cached.serialNumber,
                   item.responsible == cached.responsible,
                   item.quantity == cached.quantity else { return true }
-            result[index] = cached
+            onItem(cached)
             return false
         }
-        return try await withThrowingTaskGroup(of: (Int, BackpackItem).self) { group in
+        try await withThrowingTaskGroup(of: BackpackItem.self) { group in
             var iterator = pending.makeIterator()
-            func enqueue(_ index: Int, _ item: BackpackItem) {
+            func enqueue(_ item: BackpackItem) {
                 group.addTask {
                     try Task.checkCancellation()
                     guard !item.id.isEmpty else {
-                        return (index, item)
+                        return item
                     }
 
                     do {
-                        let detailed = try await fetchDetailedItem(item, authKey: authKey)
-                        return (index, detailed)
+                        return try await fetchDetailedItem(item, authKey: authKey)
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch let error as URLError where error.code == .cancelled {
@@ -310,19 +345,25 @@ private struct BackpackService {
                     } catch SimpleOneServiceError.unauthorized {
                         throw SimpleOneServiceError.unauthorized
                     } catch {
-                        return (index, item)
+                        if let cached = cachedByID[item.id],
+                           item.name == cached.name,
+                           item.serialNumber == cached.serialNumber,
+                           item.responsible == cached.responsible,
+                           item.quantity == cached.quantity {
+                            return cached
+                        }
+                        return item
                     }
                 }
             }
 
             for _ in 0..<min(4, pending.count) {
-                if let (index, item) = iterator.next() { enqueue(index, item) }
+                if let item = iterator.next() { enqueue(item) }
             }
-            while let (index, item) = try await group.next() {
-                result[index] = item
-                if let (nextIndex, nextItem) = iterator.next() { enqueue(nextIndex, nextItem) }
+            while let item = try await group.next() {
+                onItem(item)
+                if let nextItem = iterator.next() { enqueue(nextItem) }
             }
-            return result
         }
     }
 
@@ -383,6 +424,8 @@ struct BackpackScreen: View {
     @State private var selectedGroup: BackpackItemGroup?
     @State private var selectedLocationFilter: BackpackItemLocation?
     @State private var refreshTask: Task<Void, Never>?
+    @State private var loadedPhotoRevision: UInt64?
+    @State private var userInitiatedReturnRevision: UInt64?
     @State private var showsEquipment = false
 
     init(
@@ -434,6 +477,14 @@ struct BackpackScreen: View {
         visibleItems.reduce(0) { $0 + max($1.quantity, 1) }
     }
 
+    private var isInitialLoading: Bool {
+        store.items.isEmpty && store.lastUpdatedAt == nil && store.errorMessage == nil
+    }
+
+    private var isPhotoLoading: Bool {
+        !store.items.isEmpty && loadedPhotoRevision != store.photoRevision
+    }
+
     var body: some View {
         AppScreen(bottomContentPadding: 0) {
             VStack(alignment: .leading, spacing: 18) {
@@ -444,24 +495,35 @@ struct BackpackScreen: View {
                         systemName: "person.crop.circle.badge.exclamationmark"
                     )
                 } else {
-                    BackpackInventoryHeader(
-                        itemCount: totalQuantity,
-                        modelCount: groups.count,
-                        selectedLocation: $selectedLocationFilter,
-                        lastUpdatedAt: store.lastUpdatedAt,
-                        onOpenEquipment: {
-                            AppHaptics.trigger()
-                            showsEquipment = true
-                        }
-                    )
-                    .depthStackPrimary(reduceMotion: reduceMotion)
+                    if isInitialLoading {
+                        BackpackInventoryHeaderSkeleton()
+                            .depthStackPrimary(reduceMotion: reduceMotion)
+                    } else {
+                        BackpackInventoryHeader(
+                            itemCount: totalQuantity,
+                            modelCount: groups.count,
+                            selectedLocation: $selectedLocationFilter,
+                            lastUpdatedAt: store.lastUpdatedAt,
+                            isRefreshing: store.isLoading || coordinationStore.isReturnEquipmentLoading,
+                            onOpenEquipment: {
+                                AppHaptics.trigger()
+                                showsEquipment = true
+                            }
+                        )
+                        .depthStackPrimary(reduceMotion: reduceMotion)
+                    }
 
                     if let errorMessage = store.errorMessage {
                         AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
                             .depthStackSecondary()
                     }
 
-                    if !store.isLoading && store.items.isEmpty {
+                    if isInitialLoading {
+                        BackpackInventorySkeleton(columns: columns)
+                            .depthStackSecondary()
+                    }
+
+                    if !store.isLoading && store.items.isEmpty && store.lastUpdatedAt != nil {
                         AppCard {
                             ContentUnavailableView(
                                 "Рюкзак пуст",
@@ -491,7 +553,9 @@ struct BackpackScreen: View {
                             ForEach(groups) { group in
                                 BackpackInventoryTile(
                                     group: group,
-                                    image: photoStore.image(for: group.representativeItem)
+                                    image: photoStore.image(for: group.representativeItem),
+                                    isPhotoLoading: isPhotoLoading,
+                                    isLoadingDetails: group.items.contains { store.loadingDetailIDs.contains($0.id) }
                                 ) {
                                     AppHaptics.trigger()
                                     selectedGroup = group
@@ -505,10 +569,6 @@ struct BackpackScreen: View {
         }
         .navigationTitle("Рюкзак")
         .navigationBarTitleDisplayMode(.inline)
-        .appLoadingOverlay(
-            isPresented: simpleOneStore.isAuthorized && store.isLoading && store.items.isEmpty,
-            title: "Загружаем оборудование"
-        )
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: startRefresh) {
@@ -533,26 +593,35 @@ struct BackpackScreen: View {
         }
         .task(id: simpleOneDataScopeID) {
             guard simpleOneStore.isAuthorized else { return }
-            async let inventoryLoad: Void = store.loadIfNeeded()
-            async let returnsLoad: Void = coordinationStore.refreshReturnEquipment(
+            await store.loadIfNeeded()
+        }
+        .task(id: store.listRevision) {
+            guard simpleOneStore.isAuthorized, !store.items.isEmpty else { return }
+            await coordinationStore.refreshReturnEquipment(
                 sessionID: makeCoordinationSessionID(for: simpleOneStore),
                 simpleOneStore: simpleOneStore,
-                showsNetworkBanner: false
+                showsNetworkBanner: userInitiatedReturnRevision == store.listRevision
             )
-            await inventoryLoad
-            await returnsLoad
         }
-        .task(id: store.lastUpdatedAt) {
+        .task(id: store.photoRevision) {
             guard simpleOneStore.isAuthorized, !store.items.isEmpty else { return }
+            let revision = store.photoRevision
             await photoStore.load(for: store.items)
+            guard !Task.isCancelled else { return }
+            loadedPhotoRevision = revision
         }
         .onDisappear {
             refreshTask?.cancel()
         }
         .sheet(item: $selectedGroup) { group in
+            let currentGroup = groups.first(where: { current in
+                current.items.contains { $0.id == group.representativeItem.id }
+            }) ?? group
             BackpackItemGroupDetailSheet(
-                group: group,
-                image: photoStore.image(for: group.representativeItem),
+                group: currentGroup,
+                image: photoStore.image(for: currentGroup.representativeItem),
+                isPhotoLoading: isPhotoLoading,
+                loadingDetailIDs: store.loadingDetailIDs,
                 coordinationStore: coordinationStore,
                 locationStore: locationStore
             )
@@ -566,13 +635,8 @@ struct BackpackScreen: View {
 
     private func refresh() async {
         guard simpleOneStore.isAuthorized else { return }
-        async let inventoryRefresh: Void = store.refresh()
-        async let returnsRefresh: Void = coordinationStore.refreshReturnEquipment(
-            sessionID: makeCoordinationSessionID(for: simpleOneStore),
-            simpleOneStore: simpleOneStore
-        )
-        await inventoryRefresh
-        await returnsRefresh
+        userInitiatedReturnRevision = store.listRevision &+ 1
+        await store.refresh()
     }
 
     private func startRefresh() {
@@ -605,6 +669,7 @@ private struct BackpackInventoryHeader: View {
     let modelCount: Int
     @Binding var selectedLocation: BackpackItemLocation?
     let lastUpdatedAt: Date?
+    let isRefreshing: Bool
     let onOpenEquipment: () -> Void
 
     var body: some View {
@@ -679,7 +744,11 @@ private struct BackpackInventoryHeader: View {
             .buttonStyle(.plain)
             .accessibilityHint("Открывает оборудование, закреплённое за вами в SimpleOne")
 
-            if let lastUpdatedAt {
+            if isRefreshing {
+                SkeletonPlaceholder(cornerRadius: 5)
+                    .frame(width: 138, height: 12)
+                    .accessibilityLabel("Обновляется рюкзак")
+            } else if let lastUpdatedAt {
                 Text(updatedText(for: lastUpdatedAt))
                     .font(.caption)
                     .foregroundStyle(AppTheme.mutedTint)
@@ -726,6 +795,77 @@ private struct BackpackInventoryHeader: View {
         formatter.dateFormat = "dd.MM.yyyy"
         return formatter
     }()
+}
+
+private struct BackpackInventoryHeaderSkeleton: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 16) {
+                SkeletonPlaceholder(cornerRadius: 18)
+                    .frame(width: 58, height: 58)
+                VStack(alignment: .leading, spacing: 8) {
+                    SkeletonPlaceholder(cornerRadius: 7)
+                        .frame(width: 150, height: 24)
+                    SkeletonPlaceholder(cornerRadius: 15)
+                        .frame(width: 82, height: 30)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 20) {
+                SkeletonPlaceholder(cornerRadius: 7)
+                    .frame(width: 94, height: 26)
+                SkeletonPlaceholder(cornerRadius: 7)
+                    .frame(width: 105, height: 26)
+            }
+
+            SkeletonPlaceholder(cornerRadius: 18)
+                .frame(maxWidth: .infinity)
+                .frame(height: 62)
+            SkeletonPlaceholder(cornerRadius: 5)
+                .frame(width: 138, height: 12)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(AppTheme.border, lineWidth: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Загружается рюкзак")
+    }
+}
+
+private struct BackpackInventorySkeleton: View {
+    let columns: [GridItem]
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+            ForEach(0..<4, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: 12) {
+                    SkeletonPlaceholder(cornerRadius: 18)
+                        .frame(height: 150)
+                    SkeletonPlaceholder(cornerRadius: 6)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 18)
+                    SkeletonPlaceholder(cornerRadius: 6)
+                        .frame(width: 98, height: 18)
+                    SkeletonPlaceholder(cornerRadius: 15)
+                        .frame(width: 104, height: 30)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppTheme.cardSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(AppTheme.border, lineWidth: 1)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Загружаются карточки терминалов")
+    }
 }
 
 private struct BackpackLocationFilterMenu: View {
@@ -811,33 +951,56 @@ private struct BackpackInventoryMetric: View {
 private struct BackpackInventoryTile: View {
     let group: BackpackItemGroup
     let image: UIImage?
+    let isPhotoLoading: Bool
+    let isLoadingDetails: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
-                BackpackTerminalImage(image: image)
-                    .frame(height: 150)
-
-                Text(group.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppTheme.ink)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .topLeading)
-
-                Label {
-                    Text("Остаток: \(group.quantity)")
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-                } icon: {
-                    Image(systemName: "shippingbox.fill")
+                if isPhotoLoading && image == nil {
+                    SkeletonPlaceholder(cornerRadius: 18)
+                        .frame(height: 150)
+                } else {
+                    BackpackTerminalImage(image: image)
+                        .frame(height: 150)
                 }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AppTheme.primaryTint)
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .background(AppTheme.primaryTint.opacity(0.11), in: Capsule())
+
+                if isLoadingDetails && group.name == "(не задано)" {
+                    VStack(alignment: .leading, spacing: 6) {
+                        SkeletonPlaceholder(cornerRadius: 6).frame(height: 16)
+                        SkeletonPlaceholder(cornerRadius: 6).frame(width: 90, height: 16)
+                    }
+                    .frame(minHeight: 38, alignment: .topLeading)
+                } else {
+                    Text(group.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, minHeight: 38, alignment: .topLeading)
+                }
+
+                HStack(spacing: 8) {
+                    Label {
+                        Text("Остаток: \(group.quantity)")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                    } icon: {
+                        Image(systemName: "shippingbox.fill")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.primaryTint)
+                    .padding(.horizontal, 10)
+                    .frame(height: 30)
+                    .background(AppTheme.primaryTint.opacity(0.11), in: Capsule())
+
+                    if isLoadingDetails {
+                        SkeletonPlaceholder(cornerRadius: 6)
+                            .frame(width: 36, height: 12)
+                            .accessibilityLabel("Загружаются сведения о терминалах")
+                    }
+                }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -890,6 +1053,8 @@ private struct BackpackItemGroupDetailSheet: View {
 
     let group: BackpackItemGroup
     let image: UIImage?
+    let isPhotoLoading: Bool
+    let loadingDetailIDs: Set<String>
     let coordinationStore: CoordinationStore
     let locationStore: BackpackItemLocationStore
 
@@ -901,8 +1066,13 @@ private struct BackpackItemGroupDetailSheet: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
-                        BackpackTerminalImage(image: image)
-                            .frame(height: 230)
+                        if isPhotoLoading && image == nil {
+                            SkeletonPlaceholder(cornerRadius: 18)
+                                .frame(height: 230)
+                        } else {
+                            BackpackTerminalImage(image: image)
+                                .frame(height: 230)
+                        }
 
                         Text(group.name)
                             .font(.title3.weight(.bold))
@@ -938,6 +1108,8 @@ private struct BackpackItemGroupDetailSheet: View {
                                 BackpackItemInstanceRow(
                                     position: index + 1,
                                     item: item,
+                                    isLoadingDetails: loadingDetailIDs.contains(item.id),
+                                    isLoadingReturnEquipment: coordinationStore.isReturnEquipmentLoading && !coordinationStore.hasReturnEquipmentSnapshot,
                                     isReturnEquipment: coordinationStore.returnEquipmentSerialNumbers.contains(
                                         CoordinationStore.normalizedSerialNumber(item.serialNumber)
                                     ),
@@ -970,6 +1142,8 @@ private struct BackpackItemGroupDetailSheet: View {
 private struct BackpackItemInstanceRow: View {
     let position: Int
     let item: BackpackItem
+    let isLoadingDetails: Bool
+    let isLoadingReturnEquipment: Bool
     let isReturnEquipment: Bool
     let locationStore: BackpackItemLocationStore
 
@@ -1004,19 +1178,33 @@ private struct BackpackItemInstanceRow: View {
                 }
 
                 HStack(alignment: .bottom, spacing: 8) {
-                    BackpackInstanceValue(
-                        title: "Дата выдачи",
-                        value: item.receivedAt,
-                        systemImage: "calendar"
-                    )
+                    if isLoadingDetails && item.receivedAt == "(не задано)" {
+                        VStack(alignment: .leading, spacing: 5) {
+                            SkeletonPlaceholder(cornerRadius: 4).frame(width: 78, height: 11)
+                            SkeletonPlaceholder(cornerRadius: 5).frame(width: 112, height: 17)
+                        }
+                        .accessibilityLabel("Загружается дата выдачи")
+                    } else {
+                        BackpackInstanceValue(
+                            title: "Дата выдачи",
+                            value: item.receivedAt,
+                            systemImage: "calendar"
+                        )
+                    }
 
                     Spacer(minLength: 8)
 
-                    BackpackItemLocationMenu(
-                        item: item,
-                        isReturnEquipment: isReturnEquipment,
-                        store: locationStore
-                    )
+                    if isLoadingReturnEquipment {
+                        SkeletonPlaceholder(cornerRadius: 14)
+                            .frame(width: 86, height: 28)
+                            .accessibilityLabel("Загружается местоположение")
+                    } else {
+                        BackpackItemLocationMenu(
+                            item: item,
+                            isReturnEquipment: isReturnEquipment,
+                            store: locationStore
+                        )
+                    }
                 }
 
                 if item.quantity > 1 {

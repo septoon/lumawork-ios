@@ -1,4 +1,4 @@
-Secrets.xcconfig
+Secrets*.xcconfig
 .build/
 .codex-tmp/
 .superpowers/

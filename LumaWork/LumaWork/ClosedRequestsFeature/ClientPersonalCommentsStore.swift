@@ -2,13 +2,11 @@ import Foundation
 import SwiftUI
 
 nonisolated struct ClientPersonalComment: Codable, Hashable, Identifiable, Sendable {
-    var id: String {
-        Self.storageKey(normalizedTIN: normalizedTIN, targets: targets)
-    }
-
+    var id: String
     var normalizedTIN: String
     var displayTIN: String
     var targets: [ClientPersonalCommentTarget]
+    var terminalIDs: [String]
     var contactPerson: String
     var phone: String
     var email: String
@@ -17,9 +15,11 @@ nonisolated struct ClientPersonalComment: Codable, Hashable, Identifiable, Senda
     var updatedAt: Date
 
     init(
+        id: String,
         normalizedTIN: String,
         displayTIN: String,
         targets: [ClientPersonalCommentTarget],
+        terminalIDs: [String],
         contactPerson: String,
         phone: String,
         email: String,
@@ -27,9 +27,11 @@ nonisolated struct ClientPersonalComment: Codable, Hashable, Identifiable, Senda
         authorShortName: String?,
         updatedAt: Date
     ) {
+        self.id = id
         self.normalizedTIN = normalizedTIN
         self.displayTIN = displayTIN
         self.targets = targets
+        self.terminalIDs = terminalIDs
         self.contactPerson = contactPerson
         self.phone = phone
         self.email = email
@@ -44,9 +46,13 @@ nonisolated struct ClientPersonalComment: Codable, Hashable, Identifiable, Senda
         let normalizedTIN = try container.decodeIfPresent(String.self, forKey: .normalizedTIN)
             ?? ClientPersonalCommentsStore.normalizedTIN(displayTIN)
 
+        let targets = try container.decodeIfPresent([ClientPersonalCommentTarget].self, forKey: .targets) ?? []
+        self.id = try container.decodeIfPresent(String.self, forKey: .id)
+            ?? Self.storageKey(normalizedTIN: normalizedTIN, targets: targets)
         self.normalizedTIN = normalizedTIN
         self.displayTIN = displayTIN
-        self.targets = try container.decodeIfPresent([ClientPersonalCommentTarget].self, forKey: .targets) ?? []
+        self.targets = targets
+        self.terminalIDs = try container.decodeIfPresent([String].self, forKey: .terminalIDs) ?? []
         self.contactPerson = try container.decodeIfPresent(String.self, forKey: .contactPerson) ?? ""
         self.phone = try container.decodeIfPresent(String.self, forKey: .phone) ?? ""
         self.email = try container.decodeIfPresent(String.self, forKey: .email) ?? ""
@@ -84,12 +90,22 @@ nonisolated struct ClientPersonalCommentTarget: Codable, Hashable, Identifiable,
             return ownAddress.isEmpty
         }
         return ownAddress == incomingAddress
-            || ownAddress.contains(incomingAddress)
-            || incomingAddress.contains(ownAddress)
     }
 
     private static func normalized(_ raw: String) -> String {
         ClientPersonalCommentsStore.normalizedScopeText(raw)
+    }
+}
+
+struct ClientPersonalCommentTerminalOption: Hashable, Identifiable {
+    var terminalID: String
+    var address: String
+
+    var id: String { ClientPersonalCommentMatchingIndex.normalizedTerminalID(terminalID) }
+
+    var displayText: String {
+        let trimmedAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedAddress.isEmpty ? terminalID : "\(terminalID) · \(trimmedAddress)"
     }
 }
 
@@ -114,8 +130,11 @@ nonisolated struct ClientPersonalCommentsAPI: Sendable {
             path: "/api/v2/client-personal-comments",
             method: "POST",
             body: SaveCommentRequest(
+                id: draft.serverID,
+                sourceCommentID: draft.sourceCommentID,
                 displayTIN: draft.tin,
                 targets: draft.targets,
+                terminalIDs: draft.terminalIDs,
                 contactPerson: draft.contactPerson,
                 phone: draft.normalizedPhone,
                 email: draft.email,
@@ -139,6 +158,7 @@ nonisolated struct ClientPersonalCommentsAPI: Sendable {
         request.timeoutInterval = 20
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("2", forHTTPHeaderField: "X-LumaWork-Personal-Comments-Version")
 
         if let body {
             request.httpBody = try JSONEncoder().encode(AnyEncodable(body))
@@ -150,11 +170,15 @@ nonisolated struct ClientPersonalCommentsAPI: Sendable {
             throw AppServiceError.message("Сервер вернул неизвестный ответ.")
         }
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
+            if httpResponse.statusCode == 409,
+               let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.message {
+                throw AppServiceError.message(message)
+            }
             throw AppServiceError.http(status: httpResponse.statusCode, fallback: "Не удалось сохранить комментарий")
         }
 
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = ClientPersonalCommentDateCoding.strategy
         return try decoder.decode(Response.self, from: data)
     }
 
@@ -166,9 +190,16 @@ nonisolated struct ClientPersonalCommentsAPI: Sendable {
         var comment: ClientPersonalComment
     }
 
+    private struct ErrorResponse: Decodable {
+        var message: String
+    }
+
     private struct SaveCommentRequest: Encodable {
+        var id: String?
+        var sourceCommentID: String?
         var displayTIN: String
         var targets: [ClientPersonalCommentTarget]
+        var terminalIDs: [String]
         var contactPerson: String
         var phone: String
         var email: String
@@ -196,30 +227,24 @@ final class ClientPersonalCommentsStore {
     var errorMessage: String?
 
     private let api: ClientPersonalCommentsAPI
-    private var commentsByTIN: [String: [ClientPersonalComment]] = [:]
+    private var matchingIndex = ClientPersonalCommentMatchingIndex(entries: [])
     private let refreshInterval: TimeInterval = 5 * 60
     @ObservationIgnored private var lastRefreshedAt: Date?
     @ObservationIgnored private var refreshTask: Task<[ClientPersonalComment], Error>?
+    @ObservationIgnored private var saveRevision = 0
+    @ObservationIgnored private var savedDuringRefresh: [String: ClientPersonalComment] = [:]
+    @ObservationIgnored private var persistTask: Task<Void, Never>?
 
     init(api: ClientPersonalCommentsAPI) {
         self.api = api
         load()
     }
 
-    func comment(forTIN rawTIN: String, address: String = "") -> ClientPersonalComment? {
-        let normalizedTIN = Self.normalizedTIN(rawTIN)
-        guard !normalizedTIN.isEmpty else { return nil }
-
-        let comments = commentsByTIN[normalizedTIN] ?? []
-        if let addressComment = comments.first(where: { comment in
-            !comment.targets.isEmpty && comment.targets.contains { target in
-                target.matches(address: address)
-            }
-        }) {
-            return addressComment
+    func comment(forTIN rawTIN: String, address: String = "", terminalID: String = "") -> ClientPersonalComment? {
+        guard let id = matchingIndex.selectedID(tin: rawTIN, address: address, terminalID: terminalID) else {
+            return nil
         }
-
-        return comments.first { $0.targets.isEmpty } ?? comments.first
+        return commentsByKey[id]
     }
 
     func refresh(force: Bool = false) async {
@@ -235,6 +260,7 @@ final class ClientPersonalCommentsStore {
 
         isSyncing = true
         errorMessage = nil
+        let revisionAtStart = saveRevision
         let task = Task {
             try await api.fetchComments()
         }
@@ -245,12 +271,19 @@ final class ClientPersonalCommentsStore {
         }
         do {
             let comments = try await task.value
-            var merged = commentsByKey
+            var merged: [String: ClientPersonalComment] = [:]
             for comment in comments {
                 merged[comment.id] = comment
             }
+            if saveRevision != revisionAtStart {
+                for (id, comment) in savedDuringRefresh {
+                    merged[id] = comment
+                }
+            } else {
+                savedDuringRefresh.removeAll()
+            }
             commentsByKey = merged
-            rebuildTINIndex()
+            rebuildIndex()
             persist()
             lastRefreshedAt = Date()
         } catch {
@@ -259,48 +292,37 @@ final class ClientPersonalCommentsStore {
     }
 
     func save(_ draft: ClientPersonalCommentDraft) async throws {
-        let normalizedTIN = Self.normalizedTIN(draft.tin)
-        guard !normalizedTIN.isEmpty else { return }
-
-        let localComment = ClientPersonalComment(
-            normalizedTIN: normalizedTIN,
-            displayTIN: draft.tin.trimmingCharacters(in: .whitespacesAndNewlines),
-            targets: draft.targets,
-            contactPerson: draft.contactPerson.trimmingCharacters(in: .whitespacesAndNewlines),
-            phone: draft.normalizedPhone,
-            email: draft.email.trimmingCharacters(in: .whitespacesAndNewlines),
-            extraInfo: draft.extraInfo.trimmingCharacters(in: .whitespacesAndNewlines),
-            authorShortName: nil,
-            updatedAt: Date()
-        )
-        commentsByKey[localComment.id] = localComment
-        rebuildTINIndex()
-        persist()
-
-        var serverComment = try await api.saveComment(draft)
-        if serverComment.targets.isEmpty, !draft.targets.isEmpty {
-            serverComment.targets = draft.targets
+        guard !Self.normalizedTIN(draft.tin).isEmpty else {
+            throw AppServiceError.message("Укажите ИНН из 10 или 12 цифр.")
+        }
+        let serverComment = try await api.saveComment(draft)
+        saveRevision &+= 1
+        savedDuringRefresh[serverComment.id] = serverComment
+        if let sourceID = draft.sourceCommentID,
+           var source = commentsByKey[sourceID] {
+            let transferred = Set(serverComment.terminalIDs.map(ClientPersonalCommentMatchingIndex.normalizedTerminalID))
+            source.terminalIDs.removeAll {
+                transferred.contains(ClientPersonalCommentMatchingIndex.normalizedTerminalID($0))
+            }
+            commentsByKey[sourceID] = source
+            savedDuringRefresh[sourceID] = source
         }
         commentsByKey[serverComment.id] = serverComment
-        rebuildTINIndex()
+        rebuildIndex()
         persist()
     }
 
     nonisolated static func normalizedTIN(_ raw: String) -> String {
-        raw.filter(\.isNumber)
+        ClientPersonalCommentMatchingIndex.normalizedTIN(raw)
     }
 
     nonisolated static func normalizedScopeText(_ raw: String) -> String {
-        raw
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "ё", with: "е")
-            .replacingOccurrences(of: "Ё", with: "Е")
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        ClientPersonalCommentMatchingIndex.normalizedAddress(raw)
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: Self.storeURL),
+        guard let data = (try? Data(contentsOf: Self.storeURL))
+            ?? (try? Data(contentsOf: Self.legacyStoreURL)),
               let snapshot = try? JSONDecoder().decode([ClientPersonalComment].self, from: data) else {
             return
         }
@@ -310,24 +332,28 @@ final class ClientPersonalCommentsStore {
             loaded[comment.id] = comment
         }
         commentsByKey = loaded
-        rebuildTINIndex()
+        rebuildIndex()
     }
 
-    private func rebuildTINIndex() {
-        commentsByTIN = Dictionary(grouping: commentsByKey.values, by: \.normalizedTIN)
-            .mapValues { comments in
-                comments.sorted { lhs, rhs in
-                    if lhs.targets.isEmpty != rhs.targets.isEmpty {
-                        return !lhs.targets.isEmpty
-                    }
-                    return lhs.updatedAt > rhs.updatedAt
-                }
+    private func rebuildIndex() {
+        let entries = commentsByKey.values
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .map { comment in
+                ClientPersonalCommentMatchingIndex.Entry(
+                    id: comment.id,
+                    tin: comment.normalizedTIN,
+                    addresses: comment.targets.map(\.address),
+                    terminalIDs: comment.terminalIDs
+                )
             }
+        matchingIndex = ClientPersonalCommentMatchingIndex(entries: entries)
     }
 
     private func persist() {
         let comments = Array(commentsByKey.values)
-        Task.detached(priority: .utility) {
+        let previous = persistTask
+        persistTask = Task.detached(priority: .utility) {
+            await previous?.value
             do {
                 try FileManager.default.createDirectory(
                     at: Self.storeURL.deletingLastPathComponent(),
@@ -346,14 +372,25 @@ final class ClientPersonalCommentsStore {
             ?? FileManager.default.temporaryDirectory
         return baseURL
             .appendingPathComponent("LumaWork", isDirectory: true)
+            .appendingPathComponent("client-personal-comments-v2.json")
+    }
+
+    nonisolated private static var legacyStoreURL: URL {
+        let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return baseURL
+            .appendingPathComponent("LumaWork", isDirectory: true)
             .appendingPathComponent("client-personal-comments-v1.json")
     }
 }
 
 struct ClientPersonalCommentDraft: Codable, Identifiable, Hashable {
     var id = UUID()
+    var serverID: String?
+    var sourceCommentID: String?
     var tin = ""
     var targets: [ClientPersonalCommentTarget] = []
+    var terminalIDs: [String] = []
     var contactPerson = ""
     var phone = "+7 "
     var email = ""
@@ -361,10 +398,27 @@ struct ClientPersonalCommentDraft: Codable, Identifiable, Hashable {
 
     init() {}
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        serverID = try container.decodeIfPresent(String.self, forKey: .serverID)
+        sourceCommentID = try container.decodeIfPresent(String.self, forKey: .sourceCommentID)
+        tin = try container.decodeIfPresent(String.self, forKey: .tin) ?? ""
+        targets = try container.decodeIfPresent([ClientPersonalCommentTarget].self, forKey: .targets) ?? []
+        terminalIDs = try container.decodeIfPresent([String].self, forKey: .terminalIDs) ?? []
+        contactPerson = try container.decodeIfPresent(String.self, forKey: .contactPerson) ?? ""
+        phone = try container.decodeIfPresent(String.self, forKey: .phone) ?? "+7 "
+        email = try container.decodeIfPresent(String.self, forKey: .email) ?? ""
+        extraInfo = try container.decodeIfPresent(String.self, forKey: .extraInfo) ?? ""
+    }
+
     init(comment: ClientPersonalComment, fallbackTIN: String = "") {
         id = UUID()
+        serverID = comment.id
+        sourceCommentID = nil
         tin = comment.displayTIN.isEmpty ? fallbackTIN : comment.displayTIN
         targets = comment.targets
+        terminalIDs = comment.terminalIDs
         contactPerson = comment.contactPerson
         phone = comment.phone.isEmpty ? "+7" : ClientPersonalCommentPhoneFormatter.canonical(comment.phone)
         email = comment.email
@@ -393,20 +447,6 @@ struct ClientPersonalCommentDraft: Codable, Identifiable, Hashable {
 
     private var normalizedPhoneDigits: String {
         String(normalizedPhone.dropFirst(2))
-    }
-}
-
-enum ClientPersonalCommentPhoneFormatter {
-    static func canonical(_ raw: String) -> String {
-        var digits = raw.filter(\.isNumber)
-        if digits.count > 10 {
-            digits = String(digits.suffix(10))
-        } else if raw.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("+7")
-            || digits.hasPrefix("7")
-            || digits.hasPrefix("8") {
-            digits.removeFirst()
-        }
-        return "+7\(digits)"
     }
 }
 
@@ -445,18 +485,28 @@ enum ClientPersonalCommentDraftStore {
 struct ClientPersonalCommentEditor: View {
     let initialDraft: ClientPersonalCommentDraft
     let targetOptions: [ClientPersonalCommentTarget]
+    let terminalOptions: [ClientPersonalCommentTerminalOption]
+    let currentTarget: ClientPersonalCommentTarget?
+    let currentTerminalID: String
     let onSave: (ClientPersonalCommentDraft) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var draft: ClientPersonalCommentDraft
+    @State private var newTerminalID = ""
 
     init(
         initialDraft: ClientPersonalCommentDraft,
         targetOptions: [ClientPersonalCommentTarget],
+        terminalOptions: [ClientPersonalCommentTerminalOption],
+        currentTarget: ClientPersonalCommentTarget?,
+        currentTerminalID: String,
         onSave: @escaping (ClientPersonalCommentDraft) -> Void
     ) {
         self.initialDraft = initialDraft
         self.targetOptions = targetOptions
+        self.terminalOptions = terminalOptions
+        self.currentTarget = currentTarget
+        self.currentTerminalID = currentTerminalID
         self.onSave = onSave
         _draft = State(initialValue: initialDraft)
     }
@@ -468,6 +518,7 @@ struct ClientPersonalCommentEditor: View {
                     TextField("ИНН", text: $draft.tin)
                         .keyboardType(.numberPad)
                         .textContentType(.none)
+                        .disabled(draft.serverID != nil)
                         .onChange(of: draft.tin) { _, newValue in
                             draft.tin = newValue.filter(\.isNumber)
                         }
@@ -493,17 +544,74 @@ struct ClientPersonalCommentEditor: View {
                         .lineLimit(2...4)
                 }
 
-                if targetOptions.count > 1 {
+                if !targetOptions.isEmpty {
                     Section("Привязка к адресу") {
                         Toggle("Все адреса", isOn: allTargetsBinding)
                         ForEach(targetOptions) { target in
                             Toggle(target.displayText, isOn: binding(for: target))
                         }
+                        if initialDraft.serverID != nil,
+                           initialDraft.targets.isEmpty,
+                           draft.serverID != nil,
+                           let currentTarget {
+                            Button("Отдельный комментарий для этого адреса") {
+                                draft.sourceCommentID = draft.serverID
+                                draft.serverID = nil
+                                draft.targets = [currentTarget]
+                                draft.terminalIDs = terminalOptions
+                                    .filter {
+                                        ClientPersonalCommentMatchingIndex.normalizedAddress($0.address)
+                                            == currentTarget.normalizedKey
+                                    }
+                                    .map(\.terminalID)
+                                appendTerminalID(currentTerminalID)
+                            }
+                        }
                     }
-                } else if let target = targetOptions.first {
-                    Section("Привязка к адресу") {
-                        Text(target.displayText)
-                            .font(.subheadline)
+                }
+
+                Section("ID терминалов") {
+                    ForEach(draft.terminalIDs, id: \.self) { terminalID in
+                        HStack {
+                            Text(terminalID)
+                                .font(.subheadline)
+                            Spacer()
+                            Button("Убрать ID терминала", systemImage: "minus.circle") {
+                                draft.terminalIDs.removeAll { $0 == terminalID }
+                            }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                        }
+                    }
+
+                    HStack {
+                        TextField("ID терминала", text: $newTerminalID)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button("Добавить ID терминала", systemImage: "plus.circle") {
+                            appendTerminalID(newTerminalID)
+                            newTerminalID = ""
+                        }
+                        .labelStyle(.iconOnly)
+                        .disabled(newTerminalID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+
+                    let suggestions = terminalOptions.filter { option in
+                        let matchesAddress = draft.targets.isEmpty
+                            || draft.selectedTargetKeys.contains(
+                                ClientPersonalCommentMatchingIndex.normalizedAddress(option.address)
+                            )
+                        return !draft.terminalIDs.contains { selected in
+                            ClientPersonalCommentMatchingIndex.normalizedTerminalID(selected)
+                                == option.id
+                        } && matchesAddress
+                    }
+                    if !suggestions.isEmpty {
+                        Menu("ID из заявок", systemImage: "list.bullet") {
+                            ForEach(suggestions) { option in
+                                Button(option.displayText) { appendTerminalID(option.terminalID) }
+                            }
+                        }
                     }
                 }
             }
@@ -538,8 +646,10 @@ struct ClientPersonalCommentEditor: View {
             set: { isSelected in
                 if isSelected {
                     draft.targets = []
-                } else if draft.targets.isEmpty, let firstTarget = targetOptions.first {
-                    draft.targets = [firstTarget]
+                    draft.sourceCommentID = nil
+                } else if draft.targets.isEmpty,
+                          let target = currentTarget ?? targetOptions.first {
+                    draft.targets = [target]
                 }
             }
         )
@@ -563,6 +673,16 @@ struct ClientPersonalCommentEditor: View {
             }
         )
     }
+
+    private func appendTerminalID(_ raw: String) {
+        let terminalID = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = ClientPersonalCommentMatchingIndex.normalizedTerminalID(terminalID)
+        guard !normalized.isEmpty,
+              !draft.terminalIDs.contains(where: {
+                  ClientPersonalCommentMatchingIndex.normalizedTerminalID($0) == normalized
+              }) else { return }
+        draft.terminalIDs.append(terminalID)
+    }
 }
 
 struct ClientPersonalCommentBlock: View {
@@ -573,8 +693,9 @@ struct ClientPersonalCommentBlock: View {
         [
             ("ИНН", comment.displayTIN),
             ("Адреса", comment.targets.isEmpty ? "Все адреса" : comment.targets.map(\.displayText).joined(separator: "\n")),
+            ("ID терминалов", comment.terminalIDs.joined(separator: ", ")),
             ("Контактное лицо", comment.contactPerson),
-            ("Телефон", ClientPersonalCommentPhoneFormatter.canonical(comment.phone)),
+            ("Телефон", comment.phone.isEmpty ? "" : ClientPersonalCommentPhoneFormatter.display(comment.phone)),
             ("Почта", comment.email),
             ("Дополнительно", comment.extraInfo ?? "")
         ]
@@ -597,9 +718,6 @@ struct ClientPersonalCommentBlock: View {
                     Text("Личный комментарий")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(AppTheme.ink)
-                    Text(metadataText)
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(AppTheme.mutedTint)
                 }
 
                 Spacer(minLength: 8)
@@ -624,13 +742,24 @@ struct ClientPersonalCommentBlock: View {
 
                         AppSelectableText(
                             text: value,
-                            textStyle: .caption1,
-                            weight: .semibold
+                            textStyle: .subheadline,
+                            weight: .medium,
+                            color: title == "Почта" ? .blue : AppTheme.ink,
+                            onTap: title == "Почта"
+                                ? { AppClipboard.copy(value, message: "Почта скопирована") }
+                                : nil,
+                            onLongPress: title == "Телефон"
+                                ? { AppClipboard.copy(ClientPersonalCommentPhoneFormatter.canonical(comment.phone), message: "Телефон скопирован") }
+                                : nil
                         )
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
+
+            Text(metadataText)
+                .font(.caption2)
+                .foregroundStyle(AppTheme.mutedTint)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

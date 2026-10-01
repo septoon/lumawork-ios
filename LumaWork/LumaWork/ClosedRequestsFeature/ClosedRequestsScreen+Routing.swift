@@ -52,35 +52,58 @@ extension ClosedRequestsScreen {
         guard shouldShowClientComment(for: record) else { return nil }
         return clientCommentsStore.comment(
             forTIN: clientCommentTIN(for: record),
-            address: simpleOneAddressText(record)
+            address: simpleOneAddressText(record),
+            terminalID: simpleOneTerminalIDText(record)
         )
     }
 
     func openClientCommentEditor(record: SimpleOneRequestRecord, existingComment: ClientPersonalComment? = nil) {
         guard shouldShowClientComment(for: record) else { return }
         openClientCommentEditor(
-            tin: clientCommentTIN(for: record),
+            tin: existingComment?.displayTIN ?? clientCommentTIN(for: record),
             existingComment: existingComment,
-            currentTarget: clientCommentTarget(for: record)
+            currentTarget: clientCommentTarget(for: record),
+            currentTerminalID: simpleOneTerminalIDText(record)
         )
     }
 
     func openClientCommentEditor(
         tin rawTIN: String,
         existingComment: ClientPersonalComment? = nil,
-        currentTarget: ClientPersonalCommentTarget? = nil
+        currentTarget: ClientPersonalCommentTarget? = nil,
+        currentTerminalID: String = ""
     ) {
         let normalizedTIN = ClientPersonalCommentsStore.normalizedTIN(rawTIN)
         clientCommentTargetOptions = clientCommentTargets(forTIN: rawTIN, including: currentTarget)
+        clientCommentCurrentTarget = currentTarget
+        clientCommentCurrentTerminalID = currentTerminalID
+        clientCommentTerminalOptions = clientCommentTerminals(
+            forTIN: rawTIN,
+            including: currentTerminalID,
+            at: currentTarget
+        )
         if let cachedDraft = ClientPersonalCommentDraftStore.load(),
            !normalizedTIN.isEmpty,
-           cachedDraft.normalizedTIN == normalizedTIN {
+           cachedDraft.normalizedTIN == normalizedTIN,
+           cachedDraft.serverID == existingComment?.id,
+           (existingComment != nil
+                || cachedDraft.selectedTargetKeys == (currentTarget.map { Set([$0.normalizedKey]) } ?? [])) {
             clientCommentDraft = cachedDraft
             return
         }
 
         if let existingComment {
-            clientCommentDraft = ClientPersonalCommentDraft(comment: existingComment, fallbackTIN: rawTIN)
+            var draft = ClientPersonalCommentDraft(comment: existingComment, fallbackTIN: rawTIN)
+            if !existingComment.targets.isEmpty,
+               let currentTarget,
+               existingComment.targets.contains(where: { $0.normalizedKey == currentTarget.normalizedKey }) {
+                let normalizedID = normalizedClientCommentTerminalID(currentTerminalID)
+                if !normalizedID.isEmpty,
+                   !draft.terminalIDs.contains(where: { normalizedClientCommentTerminalID($0) == normalizedID }) {
+                    draft.terminalIDs.append(currentTerminalID)
+                }
+            }
+            clientCommentDraft = draft
             return
         }
 
@@ -88,6 +111,15 @@ extension ClosedRequestsScreen {
         draft.tin = rawTIN.filter(\.isNumber)
         if let currentTarget {
             draft.targets = [currentTarget]
+            draft.terminalIDs = clientCommentTerminalOptions
+                .filter {
+                    ClientPersonalCommentMatchingIndex.normalizedAddress($0.address) == currentTarget.normalizedKey
+                }
+                .map(\.terminalID)
+        }
+        if draft.terminalIDs.isEmpty,
+           !currentTerminalID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft.terminalIDs = [currentTerminalID]
         }
         clientCommentDraft = draft
     }
@@ -95,14 +127,16 @@ extension ClosedRequestsScreen {
     func clientCommentActionButton(
         tin rawTIN: String,
         existingComment: ClientPersonalComment?,
-        currentTarget: ClientPersonalCommentTarget? = nil
+        currentTarget: ClientPersonalCommentTarget? = nil,
+        currentTerminalID: String = ""
     ) -> some View {
         Button {
             AppHaptics.trigger()
             openClientCommentEditor(
                 tin: rawTIN,
                 existingComment: existingComment,
-                currentTarget: currentTarget
+                currentTarget: currentTarget,
+                currentTerminalID: currentTerminalID
             )
         } label: {
             HStack(spacing: 8) {
@@ -158,11 +192,7 @@ extension ClosedRequestsScreen {
 
         for record in closedRequests {
             guard shouldShowClientComment(forRequestType: record.requestType) else { continue }
-            let recordTIN = firstNonEmpty([
-                record.merchantTIN,
-                searchInfoValue(for: "ИНН ТСП", in: record)
-            ])
-            guard ClientPersonalCommentsStore.normalizedTIN(recordTIN) == normalizedTIN else { continue }
+            guard clientCommentTIN(for: record) == normalizedTIN else { continue }
             append(clientCommentTarget(address: record.address))
         }
 
@@ -171,29 +201,50 @@ extension ClosedRequestsScreen {
         }
     }
 
-    func clientCommentTIN(for record: SimpleOneRequestRecord) -> String {
-        clientCommentTIN(
-            directTIN: simpleOneMerchantTINText(record),
-            terminalID: simpleOneTerminalIDText(record),
-            requestType: simpleOneRequestTypeText(record)
-        )
+    func clientCommentTerminals(
+        forTIN rawTIN: String,
+        including currentTerminalID: String,
+        at currentTarget: ClientPersonalCommentTarget?
+    ) -> [ClientPersonalCommentTerminalOption] {
+        let normalizedTIN = ClientPersonalCommentsStore.normalizedTIN(rawTIN)
+        var optionsByID: [String: ClientPersonalCommentTerminalOption] = [:]
+
+        func append(terminalID: String, address: String) {
+            let key = normalizedClientCommentTerminalID(terminalID)
+            guard !key.isEmpty else { return }
+            if optionsByID[key] == nil || optionsByID[key]?.address.isEmpty == true {
+                optionsByID[key] = ClientPersonalCommentTerminalOption(
+                    terminalID: terminalID.trimmingCharacters(in: .whitespacesAndNewlines),
+                    address: address
+                )
+            }
+        }
+
+        append(terminalID: currentTerminalID, address: currentTarget?.address ?? "")
+        guard !normalizedTIN.isEmpty else { return Array(optionsByID.values) }
+
+        for record in simpleOneStore.activeRequests + simpleOneStore.closedRequests
+            + closedSimpleOneStore.records + warehouseSearchRecords {
+            guard clientCommentTIN(for: record) == normalizedTIN else { continue }
+            append(terminalID: simpleOneTerminalIDText(record), address: simpleOneAddressText(record))
+        }
+        for record in closedRequests {
+            guard clientCommentTIN(for: record) == normalizedTIN else { continue }
+            append(terminalID: record.terminalID, address: record.address)
+        }
+        return optionsByID.values.sorted {
+            $0.terminalID.localizedStandardCompare($1.terminalID) == .orderedAscending
+        }
     }
 
-    func clientCommentTIN(
-        directTIN rawTIN: String,
-        terminalID rawTerminalID: String,
-        requestType _: String = ""
-    ) -> String {
-        let directTIN = ClosedRequestsMerchantTINSupport.normalizedValidTIN(rawTIN)
-        if !directTIN.isEmpty {
-            return directTIN
-        }
-        let normalizedTerminalID = normalizedClientCommentTerminalID(rawTerminalID)
-        if let resolvedTIN = clientCommentTINByTerminalID[normalizedTerminalID],
-           !ClosedRequestsMerchantTINSupport.normalizedValidTIN(resolvedTIN).isEmpty {
-            return ClosedRequestsMerchantTINSupport.normalizedValidTIN(resolvedTIN)
-        }
-        return ""
+    func clientCommentTIN(for record: SimpleOneRequestRecord) -> String {
+        ClosedRequestsMerchantTINSupport.normalizedValidTIN(simpleOneMerchantTINText(record))
+    }
+
+    func clientCommentTIN(for record: ClosedRequestRecord) -> String {
+        [record.merchantTIN, searchInfoValue(for: "ИНН ТСП", in: record)]
+            .map { ClosedRequestsMerchantTINSupport.normalizedValidTIN($0 ?? "") }
+            .first(where: { !$0.isEmpty }) ?? ""
     }
 
     func isDismountingRequest(_ rawType: String) -> Bool {

@@ -5,18 +5,10 @@ extension ClosedRequestsScreen {
     func requestCard(_ item: ClosedRequestListItem) -> some View {
         let hidesCustomerAddress = isReturnEquipment(item.record.requestType)
         let showsClientComment = shouldShowClientComment(forRequestType: item.record.requestType)
-        let directMerchantTIN = firstNonEmpty([
-            item.record.merchantTIN,
-            searchInfoValue(for: "ИНН ТСП", in: item.record)
-        ])
-        let merchantTIN = clientCommentTIN(
-            directTIN: directMerchantTIN,
-            terminalID: item.record.terminalID,
-            requestType: item.record.requestType
-        )
+        let merchantTIN = clientCommentTIN(for: item.record)
         let currentTarget = clientCommentTarget(address: item.record.address)
         let personalComment = showsClientComment
-            ? clientCommentsStore.comment(forTIN: merchantTIN, address: item.record.address)
+            ? clientCommentsStore.comment(forTIN: merchantTIN, address: item.record.address, terminalID: item.record.terminalID)
             : nil
 
         return SimpleOneActiveRequestCardContainer(
@@ -62,14 +54,16 @@ extension ClosedRequestsScreen {
                             openClientCommentEditor(
                                 tin: merchantTIN,
                                 existingComment: personalComment,
-                                currentTarget: currentTarget
+                                currentTarget: currentTarget,
+                                currentTerminalID: item.record.terminalID
                             )
                         }
                     } else if !ClientPersonalCommentsStore.normalizedTIN(merchantTIN).isEmpty {
                         clientCommentActionButton(
                             tin: merchantTIN,
                             existingComment: nil,
-                            currentTarget: currentTarget
+                            currentTarget: currentTarget,
+                            currentTerminalID: item.record.terminalID
                         )
                     }
                 }

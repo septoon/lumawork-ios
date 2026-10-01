@@ -21,6 +21,9 @@ struct ClosedRequestsScreen: View {
     @State var committedClosedSearchText = ""
     @State var clientCommentDraft: ClientPersonalCommentDraft?
     @State var clientCommentTargetOptions: [ClientPersonalCommentTarget] = []
+    @State var clientCommentTerminalOptions: [ClientPersonalCommentTerminalOption] = []
+    @State var clientCommentCurrentTarget: ClientPersonalCommentTarget?
+    @State var clientCommentCurrentTerminalID = ""
     @State var currentPage = 1
     @State var isSpreadsheetImporterPresented = false
     @State var isSpreadsheetExporterPresented = false
@@ -32,7 +35,6 @@ struct ClosedRequestsScreen: View {
     @State var filteredRecordsCache: [ClosedRequestListItem] = []
     @State var activeRequestItemsCache: [ActiveRequestListItem] = []
     @State var filteredActiveRequestItemsCache: [ActiveRequestListItem] = []
-    @State var clientCommentTINByTerminalID: [String: String] = [:]
     @State var warehouseTerminalSelection: WarehouseTerminalSelection?
     @State var warehouseSearchRecords: [SimpleOneRequestRecord] = []
     @State var isWarehouseSearchLoading = false
@@ -48,6 +50,7 @@ struct ClosedRequestsScreen: View {
     @State var closedDateRange: ClosedRange<Date>?
     @State var automaticClosedDateRange: ClosedRange<Date>?
     @State var closedDateRangeSelection: ClosedRequestsDateRangeSelection?
+    @State var closedDayPositions: [String: CGFloat] = [:]
 
     let pageSize = 30
 
@@ -80,11 +83,13 @@ struct ClosedRequestsScreen: View {
                         VStack(alignment: .leading, spacing: 12) {
                             closedRequestsHeader
 
-                            if let currentDay = paginatedDayGroups.first {
+                            if let currentDay = visibleClosedDay {
                                 ClosedRequestDayHeader(
                                     title: currentDay.title,
                                     caption: currentDay.caption
                                 )
+                                .id(currentDay.id)
+                                .transition(.opacity)
                             }
                         }
                             .padding(.horizontal, 16)
@@ -143,8 +148,25 @@ struct ClosedRequestsScreen: View {
 
                     Button {
                         AppHaptics.trigger()
-                        clientCommentTargetOptions = []
-                        clientCommentDraft = ClientPersonalCommentDraftStore.load() ?? ClientPersonalCommentDraft()
+                        let draft = ClientPersonalCommentDraftStore.load() ?? ClientPersonalCommentDraft()
+                        var targetsByKey = Dictionary(
+                            uniqueKeysWithValues: clientCommentTargets(forTIN: draft.tin, including: nil)
+                                .map { ($0.normalizedKey, $0) }
+                        )
+                        for target in draft.targets {
+                            targetsByKey[target.normalizedKey] = target
+                        }
+                        clientCommentTargetOptions = Array(targetsByKey.values).sorted {
+                            $0.displayText.localizedCaseInsensitiveCompare($1.displayText) == .orderedAscending
+                        }
+                        clientCommentTerminalOptions = clientCommentTerminals(
+                            forTIN: draft.tin,
+                            including: "",
+                            at: nil
+                        )
+                        clientCommentCurrentTarget = nil
+                        clientCommentCurrentTerminalID = ""
+                        clientCommentDraft = draft
                     } label: {
                         Label("Комментарий", systemImage: "text.bubble")
                     }
@@ -281,6 +303,9 @@ struct ClosedRequestsScreen: View {
             ClientPersonalCommentEditor(
                 initialDraft: draft,
                 targetOptions: clientCommentTargetOptions,
+                terminalOptions: clientCommentTerminalOptions,
+                currentTarget: clientCommentCurrentTarget,
+                currentTerminalID: clientCommentCurrentTerminalID,
                 onSave: { updatedDraft in
                     ClientPersonalCommentDraftStore.save(updatedDraft)
                     Task {
@@ -294,7 +319,9 @@ struct ClosedRequestsScreen: View {
                     }
                 }
             )
-            .appEditorSheetStyle()
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.disabled)
         }
         .sheet(item: $warehouseTerminalSelection) { selection in
             WarehouseRequestsSheet(
@@ -580,21 +607,39 @@ private extension ClosedRequestsScreen {
                     systemName: "magnifyingglass"
                 )
             } else {
-                LazyVStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 16) {
                     ForEach(paginatedDayGroups) { group in
-                        if group.id != paginatedDayGroups.first?.id {
-                            ClosedRequestDayHeader(title: group.title, caption: group.caption)
+                        LazyVStack(alignment: .leading, spacing: 16) {
+                            ForEach(group.records) { record in
+                                requestCard(record)
+                                    .depthStackPrimary(
+                                        reduceMotion: reduceMotion,
+                                        stage: closedRequestDepthStages[record.id, default: 0]
+                                    )
+                            }
                         }
-                        ForEach(group.records) { record in
-                            requestCard(record)
-                                .depthStackPrimary(
-                                    reduceMotion: reduceMotion,
-                                    stage: closedRequestDepthStages[record.id, default: 0]
-                                )
+                        .background(alignment: .top) {
+                            ClosedRequestDayMarker(dayKey: group.id)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .onPreferenceChange(ClosedRequestDayPositionKey.self) { positions in
+                    let keys = paginatedDayGroups.map(\.id)
+                    let previous = ClosedRequestDayTracking.visibleKey(
+                        orderedKeys: keys, positions: closedDayPositions
+                    )
+                    let next = ClosedRequestDayTracking.visibleKey(
+                        orderedKeys: keys, positions: positions
+                    )
+                    if previous == next {
+                        closedDayPositions = positions
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            closedDayPositions = positions
+                        }
+                    }
+                }
 
                 if pageCount > 1 {
                     paginationCard
@@ -609,6 +654,15 @@ private extension ClosedRequestsScreen {
                 (record.id, index)
             }
         )
+    }
+
+    var visibleClosedDay: ClosedRequestDayGroup? {
+        let groups = paginatedDayGroups
+        guard let key = ClosedRequestDayTracking.visibleKey(
+            orderedKeys: groups.map(\.id),
+            positions: closedDayPositions
+        ) else { return nil }
+        return groups.first { $0.id == key }
     }
 
     var closedRequestsEmptyTitle: String {

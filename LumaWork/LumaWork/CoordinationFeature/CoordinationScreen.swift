@@ -84,15 +84,6 @@ struct CoordinationScreen: View {
         }
     }
 
-    private var isSelectedSectionLoading: Bool {
-        switch selectedSection {
-        case .distribution:
-            store.isLoading
-        case .returnEquipment:
-            store.isReturnEquipmentLoading
-        }
-    }
-
     private var returnEquipmentDetailIsPresented: Binding<Bool> {
         Binding(
             get: { selectedReturnEquipmentRequest != nil },
@@ -128,18 +119,16 @@ struct CoordinationScreen: View {
             }
 
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    AppHaptics.trigger()
-                    Task { await refreshSelectedSection() }
+                NavigationLink {
+                    CoordinationGroupClosedRequestsScreen(
+                        simpleOneStore: simpleOneStore,
+                        lumaWorkAuthToken: lumaWorkAuthToken
+                    )
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    Image(systemName: "checklist.checked")
                 }
-                .disabled(isSelectedSectionLoading || !simpleOneStore.isAuthorized)
-                .accessibilityLabel(
-                    selectedSection == .distribution
-                        ? "Обновить распределение"
-                        : "Обновить возврат оборудования"
-                )
+                .disabled(!simpleOneStore.isAuthorized)
+                .accessibilityLabel("Закрытые заявки группы")
             }
         }
         .refreshable {

@@ -352,26 +352,17 @@ struct RouteMonthlyMileage: Hashable {
         errorMessage = nil
         notice = nil
 
-        let addresses = record.stops
-            .map(\.address)
-            .map { $0.normalizedAddressCommaSpacing() }
-            .filter { !$0.isEmpty }
+        let addresses = record.stops.map(\.address)
 
-        guard addresses.count >= 2 else {
+        guard addresses.lazy.filter({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }).count >= 2 else {
             errorMessage = "Для маршрута нужны минимум два адреса."
             return nil
         }
 
-        guard let rawURL = AppConfig().mapsRouteURL,
-              var components = URLComponents(string: rawURL) else {
-            errorMessage = "Не удалось собрать ссылку Яндекс.Карт."
-            return nil
-        }
-        components.queryItems = [
-            URLQueryItem(name: "rtext", value: addresses.joined(separator: "~")),
-            URLQueryItem(name: "rtt", value: "auto")
-        ]
-        guard let url = components.url else {
+        guard let url = YandexRouteLinks.webURL(
+            baseURL: AppConfig().mapsRouteURL,
+            addresses: addresses
+        ) else {
             errorMessage = "Не удалось собрать ссылку Яндекс.Карт."
             return nil
         }

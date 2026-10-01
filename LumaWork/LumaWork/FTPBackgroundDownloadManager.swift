@@ -221,10 +221,36 @@ final class FTPBackgroundDownloadManager: NSObject {
               !records[index].state.isActive else {
             return
         }
+        if records[index].action == .download,
+           records[index].state == .completed,
+           let localFilePath = records[index].localFilePath,
+           FileManager.default.fileExists(atPath: localFilePath) {
+            return
+        }
         let record = records.remove(at: index)
         if let localFilePath = record.localFilePath {
             Self.removeManagedLocalFileIfNeeded(URL(fileURLWithPath: localFilePath))
         }
+        persistRecords()
+    }
+
+    func deleteSavedDownload(recordID: UUID, ownerID: String) throws {
+        guard let index = records.firstIndex(where: {
+            $0.id == recordID && $0.ownerID == ownerID &&
+                $0.action == .download && $0.state == .completed
+        }), let localFilePath = records[index].localFilePath else {
+            throw FTPBackgroundDownloadError.message("Скачанный файл не найден.")
+        }
+
+        let directory = try Self.userDownloadsDirectory().standardizedFileURL
+        let fileURL = URL(fileURLWithPath: localFilePath).standardizedFileURL
+        guard fileURL.deletingLastPathComponent() == directory,
+              fileURL.resolvingSymlinksInPath().deletingLastPathComponent() == directory.resolvingSymlinksInPath() else {
+            throw FTPBackgroundDownloadError.message("Нельзя удалить файл за пределами загрузок FTP.")
+        }
+
+        try FileManager.default.removeItem(at: fileURL)
+        records.remove(at: index)
         persistRecords()
     }
 
@@ -428,11 +454,16 @@ final class FTPBackgroundDownloadManager: NSObject {
     }
 
     private func persistRecords() {
-        if records.count > 50 {
-            let active = records.filter(\.state.isActive)
-            let finished = records.filter { !$0.state.isActive }.prefix(max(0, 50 - active.count))
-            records = active + finished
+        let retained = records.filter { record in
+            if record.state.isActive { return true }
+            guard record.action == .download,
+                  record.state == .completed,
+                  let path = record.localFilePath else { return false }
+            return FileManager.default.fileExists(atPath: path)
         }
+        let retainedIDs = Set(retained.map(\.id))
+        let history = records.filter { !retainedIDs.contains($0.id) }.prefix(50)
+        records = retained + history
         guard let data = try? JSONEncoder().encode(records) else { return }
         UserDefaults.standard.set(data, forKey: Self.persistenceKey)
     }

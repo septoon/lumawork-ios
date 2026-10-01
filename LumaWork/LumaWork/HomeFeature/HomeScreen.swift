@@ -219,9 +219,8 @@ struct HomeScreen: View {
                     : selection.suggestions.isEmpty ? 340 : 390
             )
         }
-        .sheet(item: $yandexRoute) { destination in
+        .fullScreenCover(item: $yandexRoute) { destination in
             YandexRouteBrowser(url: destination.url)
-                .ignoresSafeArea()
         }
         .alert("Отправить отчёт?", isPresented: $sendConfirmationPresented) {
             Button("Отправить") {
@@ -952,8 +951,52 @@ private struct YandexRouteWebView: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         ))
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: repeatedStartRouteScript,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
         return configuration
     }
+
+    // Yandex needs the start's resolved place URI on an intermediate return to the same point.
+    private static let repeatedStartRouteScript = """
+    (() => {
+      if (window.__lumaRepeatedStartRouteCheck) return;
+      window.__lumaRepeatedStartRouteCheck = true;
+
+      let attempts = 0;
+      const timer = setInterval(() => {
+        if (++attempts > 120) {
+          clearInterval(timer);
+          return;
+        }
+
+        const url = new URL(location.href);
+        const points = url.searchParams.get('rtext')?.split('~') || [];
+        const uris = url.searchParams.get('ruri')?.split('~') || [];
+        if (points.length < 3 || uris.length !== points.length || !uris[0]) return;
+
+        const repeatedStops = points.flatMap((point, index) =>
+          index > 0 && index < points.length - 1 && point === points[0] && !uris[index]
+            ? [index] : []
+        );
+        if (!repeatedStops.length) return;
+
+        const routeKey = 'lumaRepeatedStart:' + points.join('~');
+        if (sessionStorage.getItem(routeKey)) {
+          clearInterval(timer);
+          return;
+        }
+
+        repeatedStops.forEach(index => { uris[index] = uris[0]; });
+        sessionStorage.setItem(routeKey, '1');
+        url.searchParams.set('ruri', uris.join('~'));
+        clearInterval(timer);
+        location.replace(url.href);
+      }, 500);
+    })();
+    """
 
     private static let injectedScript = """
     (() => {

@@ -1,6 +1,21 @@
 import Foundation
 
 nonisolated extension SimpleOneRequestsService {
+    func fetchGroupClosedRequestsPage(
+        authKey: String,
+        page: Int,
+        perPage: Int
+    ) async throws -> SimpleOnePagedRequestRecords {
+        try await fetchRequestsPage(
+            condition: "(company_location=171878330004108924^resolved_atNOTONopt:167653141215593053^stateNOT INon_hold@assigned@in_progress@escalated@returned_to_work@3@6@update_received)",
+            source: .closed,
+            authKey: authKey,
+            page: page,
+            perPage: perPage,
+            columns: Self.terminalSearchColumns
+        )
+    }
+
     func fetchCoordinationRequests(
         region: CoordinationRegion,
         authKey: String

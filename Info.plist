@@ -65,7 +65,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Камера используется для фотографии профиля и вложений к вопросам помощнику.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Face ID используется для безопасного входа в раздел «Зарплата».</string>
+	<string>Face ID используется для безопасного входа в разделы «Зарплата» и «Админка».</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Микрофон используется для локальной диктовки вопросов помощнику.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

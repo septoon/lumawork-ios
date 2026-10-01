@@ -1,9 +1,12 @@
+import LocalAuthentication
 import SwiftUI
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedSection: AppNavigationSection = .home
     @State private var previousSection: AppNavigationSection = .home
+    @State private var previousAdminSection: AppNavigationSection = .home
+    @State private var isAdminUnlocked = false
     @State private var isMenuPresented = false
     @State private var requestedActiveRequestID: String?
     @State private var stores: AppDataStores
@@ -46,6 +49,11 @@ struct ContentView: View {
         .tint(AppTheme.primaryTint)
         .background(KeyboardDismissOnTapInstaller())
         .onChange(of: selectedSection) { oldValue, newValue in
+            if newValue == .users, oldValue != .users {
+                previousAdminSection = oldValue
+            } else if oldValue == .users {
+                isAdminUnlocked = false
+            }
             if newValue != .salary {
                 previousSection = newValue
             } else if oldValue != .salary {
@@ -56,7 +64,11 @@ struct ContentView: View {
             normalizeSelectedSection()
         }
         .onChange(of: sessionStore.isAdmin) { _, _ in
+            isAdminUnlocked = false
             normalizeSelectedSection()
+        }
+        .onChange(of: sessionStore.authToken) { _, _ in
+            isAdminUnlocked = false
         }
         .task {
             normalizeSelectedSection()
@@ -85,6 +97,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .background else { return }
+            isAdminUnlocked = false
             WidgetSnapshotPublisher.publish(
                 stores: stores,
                 isAuthenticated: sessionStore.isAuthenticated
@@ -193,10 +206,24 @@ struct ContentView: View {
                 showsCloseButton: false
             )
         case .users:
-            AdminUsersScreen(
-                sessionStore: sessionStore,
-                store: stores.adminUsersStore
-            )
+            if isAdminUnlocked {
+                AdminUsersScreen(
+                    sessionStore: sessionStore,
+                    store: stores.adminUsersStore
+                )
+            } else {
+                AdminAccessLockView(
+                    onUnlock: {
+                        guard selectedSection == .users,
+                              scenePhase == .active,
+                              sessionStore.isAdmin else { return }
+                        isAdminUnlocked = true
+                    },
+                    onCancel: {
+                        selectedSection = previousAdminSection == .users ? .home : previousAdminSection
+                    }
+                )
+            }
         }
     }
 
@@ -252,6 +279,93 @@ struct ContentView: View {
             routeIsToday: stores.homeStore.isToday,
             isAuthenticated: sessionStore.isAuthenticated
         )
+    }
+}
+
+private struct AdminAccessLockView: View {
+    let onUnlock: () -> Void
+    let onCancel: () -> Void
+
+    @State private var authenticationAttempt = 0
+    @State private var isAuthenticating = true
+    @State private var errorMessage: String?
+
+    var body: some View {
+        AppScreen {
+            AppCard {
+                VStack(spacing: 16) {
+                    ContentUnavailableView(
+                        "Админка заблокирована",
+                        systemImage: "lock.shield",
+                        description: Text("Подтвердите личность для входа в админку.")
+                    )
+
+                    if isAuthenticating {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(AppTheme.dangerTint)
+                                .multilineTextAlignment(.center)
+                        }
+
+                        Button("Повторить проверку", systemImage: "faceid") {
+                            authenticationAttempt += 1
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button("Назад") {
+                            onCancel()
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .navigationTitle("Админка")
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: authenticationAttempt) {
+            await authenticate()
+        }
+    }
+
+    private func authenticate() async {
+        isAuthenticating = true
+        errorMessage = nil
+        defer { isAuthenticating = false }
+
+        let context = LAContext()
+        context.localizedCancelTitle = "Отмена"
+        var availabilityError: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &availabilityError) else {
+            errorMessage = "Для входа настройте Face ID или код устройства."
+            return
+        }
+
+        do {
+            let authenticated = try await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: "Открыть админку"
+            )
+            guard authenticated, !Task.isCancelled else { return }
+            AppHaptics.trigger(.success)
+            onUnlock()
+        } catch let error as LAError {
+            guard !Task.isCancelled else { return }
+            switch error.code {
+            case .userCancel, .systemCancel, .appCancel:
+                break
+            default:
+                errorMessage = "Не удалось подтвердить личность. Повторите попытку."
+                AppHaptics.trigger(.error)
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            errorMessage = "Не удалось подтвердить личность. Повторите попытку."
+            AppHaptics.trigger(.error)
+        }
     }
 }
 

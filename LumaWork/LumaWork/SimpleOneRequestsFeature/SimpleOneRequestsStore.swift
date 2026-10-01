@@ -361,6 +361,23 @@ final class SimpleOneRequestsStore {
         }
     }
 
+    func fetchGroupClosedRequestsPage(
+        page: Int,
+        perPage: Int
+    ) async throws -> SimpleOnePagedRequestRecords {
+        guard let authKey else { throw SimpleOneServiceError.missingCredentials }
+        do {
+            return try await service.fetchGroupClosedRequestsPage(
+                authKey: authKey,
+                page: page,
+                perPage: perPage
+            )
+        } catch SimpleOneServiceError.unauthorized {
+            signOut(clearUsername: false)
+            throw SimpleOneServiceError.unauthorized
+        }
+    }
+
     func fetchCoordinationDetails(_ records: [SimpleOneRequestRecord]) async throws -> [SimpleOneRequestRecord] {
         guard let authKey else { throw SimpleOneServiceError.missingCredentials }
         return try await hydrateRequestDetails(records, authKey: authKey, allowsPartialResults: true)

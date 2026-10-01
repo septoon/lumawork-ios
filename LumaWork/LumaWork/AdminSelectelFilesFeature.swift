@@ -8,8 +8,11 @@ nonisolated struct AdminEngineerRemoteFile: Codable, Identifiable, Hashable, Sen
     let name: String
     let sizeBytes: Int64
     let uploadedAt: String
+    let kind: String?
+    let isActive: Bool?
 
     var id: String { "\(area.rawValue)/\(name)" }
+    var isSnapshot: Bool { kind == "snapshot" || area == .wikiSnapshots }
 }
 
 nonisolated private struct AdminEngineerFilesResponse: Decodable {
@@ -212,7 +215,7 @@ private final class AdminEngineerFilesStore {
     private let api: AdminEngineerFilesAPI?
     let canManage: Bool
 
-    var selectedArea: AdminSelectelManagedArea = .engineerReleases
+    let selectedArea: AdminSelectelManagedArea
     var files: [AdminEngineerRemoteFile] = []
     var isLoading = false
     var isLoadingSource = false
@@ -221,8 +224,9 @@ private final class AdminEngineerFilesStore {
     var loadError: String?
     var downloadedFile: URL?
 
-    init(token: String?, canManage: Bool) {
+    init(token: String?, canManage: Bool, area: AdminSelectelManagedArea) {
         self.canManage = canManage
+        selectedArea = area
         if let token, !token.isEmpty {
             api = AdminEngineerFilesAPI(config: AppConfig(), token: token)
         } else {
@@ -250,15 +254,8 @@ private final class AdminEngineerFilesStore {
         }
     }
 
-    func select(_ area: AdminSelectelManagedArea) async {
-        guard selectedArea != area else { return }
-        selectedArea = area
-        files = []
-        await load()
-    }
-
     func upload(_ url: URL, overwrite: Bool) async {
-        guard canManage, let api else { return }
+        guard canManage, selectedArea != .wikiSnapshots, let api else { return }
         uploadProgress = 0
         defer { uploadProgress = nil }
         do {
@@ -284,7 +281,7 @@ private final class AdminEngineerFilesStore {
     }
 
     func rename(_ file: AdminEngineerRemoteFile, to newName: String) async -> Bool {
-        guard canManage, let api else { return false }
+        guard canManage, !file.isSnapshot, let api else { return false }
         busyFileID = file.id
         defer { busyFileID = nil }
         do {
@@ -299,7 +296,7 @@ private final class AdminEngineerFilesStore {
     }
 
     func delete(_ file: AdminEngineerRemoteFile) async {
-        guard canManage, let api else { return }
+        guard canManage, !file.isSnapshot, let api else { return }
         busyFileID = file.id
         defer { busyFileID = nil }
         do {
@@ -347,6 +344,45 @@ private final class AdminEngineerFilesStore {
 }
 
 struct AdminSelectelFilesScreen: View {
+    let token: String?
+    let canManage: Bool
+
+    var body: some View {
+        List {
+            Section("Хранилища") {
+                ForEach(AdminSelectelManagedArea.allCases) { area in
+                    NavigationLink {
+                        AdminEngineerFilesAreaScreen(token: token, canManage: canManage, area: area)
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: area.systemImage)
+                                .font(.title3)
+                                .foregroundStyle(AppTheme.primaryTint)
+                                .frame(width: 42, height: 42)
+                                .background(AppTheme.primaryTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(area.title)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(AppTheme.ink)
+                                Text(area.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(AppTheme.mutedTint)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(AppTheme.background)
+        .navigationTitle("Файлы инженера")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct AdminEngineerFilesAreaScreen: View {
     private enum PresentedSheet: Identifiable {
         case rename(AdminEngineerRemoteFile)
         case source(AdminEngineerSource)
@@ -376,9 +412,10 @@ struct AdminSelectelFilesScreen: View {
     @State private var isExporting = false
     @State private var presentedSheet: PresentedSheet?
     @State private var confirmation: Confirmation?
+    @State private var searchText = ""
 
-    init(token: String?, canManage: Bool) {
-        _store = State(initialValue: AdminEngineerFilesStore(token: token, canManage: canManage))
+    init(token: String?, canManage: Bool, area: AdminSelectelManagedArea) {
+        _store = State(initialValue: AdminEngineerFilesStore(token: token, canManage: canManage, area: area))
     }
 
     var body: some View {
@@ -387,22 +424,27 @@ struct AdminSelectelFilesScreen: View {
 
     private var listContent: some View {
         List {
-            areaSection
-            sourceEditorSection
             uploadSection
             filesSection
         }
         .scrollContentBackground(.hidden)
         .background(AppTheme.background)
-        .navigationTitle("Файлы Инженера")
+        .navigationTitle(store.selectedArea.title)
         .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: "Поиск файлов")
         .toolbar {
-            if store.canManage {
+            if store.selectedArea == .publicationMetadata {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
+                    Button("Редактор", systemImage: "slider.horizontal.3") {
+                        Task { await openSourceEditor() }
+                    }
+                    .disabled(store.isLoadingSource || store.files.isEmpty)
+                }
+            }
+            if store.canManage, store.selectedArea != .wikiSnapshots {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Загрузить файл", systemImage: "plus") {
                         isImporting = true
-                    } label: {
-                        Image(systemName: "plus")
                     }
                     .disabled(store.uploadProgress != nil)
                 }
@@ -472,44 +514,6 @@ struct AdminSelectelFilesScreen: View {
         }
     }
 
-    private var areaSection: some View {
-        Section {
-            Picker("Раздел", selection: areaBinding) {
-                ForEach(AdminSelectelManagedArea.allCases) { area in
-                    Text(area.title).tag(area)
-                }
-            }
-            Text(store.selectedArea.subtitle)
-                .font(.caption)
-                .foregroundStyle(AppTheme.mutedTint)
-        }
-    }
-
-    @ViewBuilder
-    private var sourceEditorSection: some View {
-        if store.selectedArea == .publicationMetadata {
-            Section {
-                Button {
-                    Task { await openSourceEditor() }
-                } label: {
-                    Label("Редактировать source.json", systemImage: "slider.horizontal.3")
-                }
-                .disabled(store.isLoadingSource)
-
-                if store.isLoadingSource {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                        Text("Загрузка source.json")
-                    }
-                }
-            } header: {
-                Text("Редактор")
-            } footer: {
-                Text("Поля источника, приложений, версий, разрешений и новостей — без ручного редактирования JSON.")
-            }
-        }
-    }
-
     @ViewBuilder
     private var uploadSection: some View {
         if let progress = store.uploadProgress {
@@ -523,7 +527,7 @@ struct AdminSelectelFilesScreen: View {
     }
 
     private var filesSection: some View {
-        Section(store.selectedArea.title) {
+        Section {
             if store.isLoading, store.files.isEmpty {
                 HStack {
                     Spacer()
@@ -538,16 +542,67 @@ struct AdminSelectelFilesScreen: View {
                 )
             } else if store.files.isEmpty {
                 ContentUnavailableView(
-                    "Файлов нет",
+                    store.selectedArea == .wikiSnapshots ? "Снимков нет" : "Файлов нет",
                     systemImage: store.selectedArea.systemImage,
-                    description: Text(store.canManage ? "Загрузите первый файл в этот раздел." : "В этом разделе пока нет файлов.")
+                    description: Text(emptyMessage)
                 )
+            } else if visibleFiles.isEmpty {
+                ContentUnavailableView.search(text: searchText)
             } else {
-                ForEach(store.files) { file in
-                    fileRow(file)
+                ForEach(visibleFiles) { file in
+                    if file.isSnapshot {
+                        snapshotRow(file)
+                    } else {
+                        fileRow(file)
+                    }
                 }
             }
+        } header: {
+            Text(store.files.isEmpty ? "Содержимое" : "Содержимое · \(store.files.count)")
+        } footer: {
+            Text(store.selectedArea == .wikiSnapshots
+                 ? "Снимки создаются и переключаются сервисом Wiki. Здесь доступен просмотр списка."
+                 : store.selectedArea.subtitle)
         }
+    }
+
+    private var visibleFiles: [AdminEngineerRemoteFile] {
+        guard !searchText.isEmpty else { return store.files }
+        return store.files.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    private var emptyMessage: String {
+        if store.selectedArea == .wikiSnapshots { return "Сервис Wiki пока не создал снимков." }
+        return store.canManage ? "Загрузите первый файл в этот раздел." : "В этом разделе пока нет файлов."
+    }
+
+    private func snapshotRow(_ file: AdminEngineerRemoteFile) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.title3)
+                .foregroundStyle(AppTheme.primaryTint)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(snapshotDate(for: file.name))
+                    .font(.subheadline.weight(.semibold))
+                Text(file.name)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(AppTheme.mutedTint)
+            }
+
+            Spacer(minLength: 4)
+            if file.isActive == true {
+                Text("Активный")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.green.opacity(0.12), in: Capsule())
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 
     private func fileRow(_ file: AdminEngineerRemoteFile) -> some View {
@@ -556,10 +611,11 @@ struct AdminSelectelFilesScreen: View {
                 .foregroundStyle(AppTheme.primaryTint)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 3) {
-                Text(file.name)
+                Text(displayName(for: file))
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(2)
                 Text(metadata(for: file))
-                    .font(.caption.monospacedDigit())
+                    .font(.caption)
                     .foregroundStyle(AppTheme.mutedTint)
             }
             Spacer(minLength: 4)
@@ -595,21 +651,18 @@ struct AdminSelectelFilesScreen: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                        .frame(width: 44, height: 44)
                 }
+                .accessibilityLabel("Действия с файлом \(file.name)")
             }
         }
+        .padding(.vertical, 4)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if store.canManage {
                 Button("Удалить", role: .destructive) { confirmation = .delete(file) }
             }
         }
-    }
-
-    private var areaBinding: Binding<AdminSelectelManagedArea> {
-        Binding(
-            get: { store.selectedArea },
-            set: { area in Task { await store.select(area) } }
-        )
     }
 
     private func openSourceEditor() async {
@@ -624,6 +677,31 @@ struct AdminSelectelFilesScreen: View {
             ?? file.uploadedAt
         return "\(size) • \(date)"
     }
+
+    private func displayName(for file: AdminEngineerRemoteFile) -> String {
+        guard file.area == .engineerReleases,
+              file.name.hasPrefix("LumaWork-"),
+              file.name.lowercased().hasSuffix(".ipa") else { return file.name }
+        let stem = file.name.dropFirst("LumaWork-".count).dropLast(".ipa".count)
+        guard let divider = stem.lastIndex(of: "-") else { return file.name }
+        let version = stem[..<divider]
+        let build = stem[stem.index(after: divider)...]
+        guard !version.isEmpty, !build.isEmpty else { return file.name }
+        return "Версия \(version) · сборка \(build)"
+    }
+
+    private func snapshotDate(for name: String) -> String {
+        Self.snapshotFormatter.date(from: name)?
+            .formatted(date: .abbreviated, time: .shortened) ?? name
+    }
+
+    private static let snapshotFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        return formatter
+    }()
 
     private static let dateFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()

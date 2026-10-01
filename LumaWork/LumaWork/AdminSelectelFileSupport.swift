@@ -10,28 +10,28 @@ nonisolated enum AdminSelectelManagedArea: String, CaseIterable, Codable, Identi
 
     var title: String {
         switch self {
-        case .wikiSnapshots: "Wiki snapshots"
-        case .wikiUploads: "Wiki uploads"
-        case .engineerReleases: "Релизы IPA"
-        case .publicationMetadata: "Метаданные публикации"
+        case .wikiSnapshots: "Снимки Wiki"
+        case .wikiUploads: "Загрузки Wiki"
+        case .engineerReleases: "Релизы приложения"
+        case .publicationMetadata: "Публикация SideStore"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .wikiSnapshots: "Снимки базы знаний"
+        case .wikiSnapshots: "Состояния базы знаний · только просмотр"
         case .wikiUploads: "Файлы, загруженные в Wiki"
-        case .engineerReleases: "Только сборки приложения «Инженер»"
-        case .publicationMetadata: "source.json каталога SideStore"
+        case .engineerReleases: "IPA-сборки приложения «Инженер»"
+        case .publicationMetadata: "Каталог обновлений source.json"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .wikiSnapshots: "clock.arrow.trianglehead.counterclockwise.rotate.90"
-        case .wikiUploads: "books.vertical.fill"
+        case .wikiSnapshots: "clock.arrow.circlepath"
+        case .wikiUploads: "tray.and.arrow.up.fill"
         case .engineerReleases: "shippingbox.fill"
-        case .publicationMetadata: "doc.text.fill"
+        case .publicationMetadata: "doc.badge.gearshape"
         }
     }
 

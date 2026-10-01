@@ -3,26 +3,9 @@ import SwiftUI
 
 extension ClosedRequestsScreen {
     func rebuildActiveRequestItems() {
-        var items = simpleOneStore.activeRequests.map { record in
+        let items = simpleOneStore.activeRequests.map { record in
             makeActiveRequestListItem(record)
         }
-        var terminalTINIndex = clientCommentTINByTerminalID
-        for item in items {
-            let normalizedTerminalID = normalizedClientCommentTerminalID(item.terminalID)
-            guard !normalizedTerminalID.isEmpty,
-                  !ClosedRequestsMerchantTINSupport.normalizedValidTIN(item.merchantTIN).isEmpty else {
-                continue
-            }
-            terminalTINIndex[normalizedTerminalID] = item.merchantTIN
-        }
-        for index in items.indices where ClosedRequestsMerchantTINSupport.normalizedValidTIN(items[index].merchantTIN).isEmpty {
-            let normalizedTerminalID = normalizedClientCommentTerminalID(items[index].terminalID)
-            if let resolvedTIN = terminalTINIndex[normalizedTerminalID],
-               !ClosedRequestsMerchantTINSupport.normalizedValidTIN(resolvedTIN).isEmpty {
-                items[index].merchantTIN = ClosedRequestsMerchantTINSupport.normalizedValidTIN(resolvedTIN)
-            }
-        }
-        clientCommentTINByTerminalID = terminalTINIndex
         activeRequestItemsCache = items
         refreshFilteredActiveRequestItems()
     }
@@ -111,18 +94,7 @@ extension ClosedRequestsScreen {
                 fields: infoFields
             )
         }()
-        let merchantTIN: String = {
-            let direct = simpleOneInfoValue(
-                record,
-                labels: ["ИНН ТСП", "ИНН", "ИНН клиента"],
-                fields: infoFields
-            )
-            guard direct.isEmpty else { return direct }
-            return extractedLabeledValue(
-                from: simpleOneInfoTexts(record),
-                labels: ["ИНН ТСП", "ИНН", "ИНН клиента"]
-            )
-        }()
+        let merchantTIN = simpleOneMerchantTINText(record, fields: infoFields)
         let isStatusRefreshing = simpleOneStore.isRefreshingStatus(for: record)
         let statusText = isStatusRefreshing
             ? "Обновляю статус"
@@ -181,7 +153,7 @@ extension ClosedRequestsScreen {
         let currentTarget = clientCommentTarget(address: item.address)
         let showsClientComment = shouldShowClientComment(forRequestType: item.requestType)
         let personalComment = showsClientComment
-            ? clientCommentsStore.comment(forTIN: item.merchantTIN, address: item.address)
+            ? clientCommentsStore.comment(forTIN: item.merchantTIN, address: item.address, terminalID: item.terminalID)
             : nil
         let statusStyle = item.isStatusRefreshing
             ? SimpleOneMulticardStatusStyle.loading
@@ -269,14 +241,16 @@ extension ClosedRequestsScreen {
                             openClientCommentEditor(
                                 tin: item.merchantTIN,
                                 existingComment: personalComment,
-                                currentTarget: currentTarget
+                                currentTarget: currentTarget,
+                                currentTerminalID: item.terminalID
                             )
                         }
                     } else if !ClientPersonalCommentsStore.normalizedTIN(item.merchantTIN).isEmpty {
                         clientCommentActionButton(
                             tin: item.merchantTIN,
                             existingComment: nil,
-                            currentTarget: currentTarget
+                            currentTarget: currentTarget,
+                            currentTerminalID: item.terminalID
                         )
                     }
                 }
@@ -634,11 +608,21 @@ extension ClosedRequestsScreen {
         ])
     }
 
-    func simpleOneMerchantTINText(_ record: SimpleOneRequestRecord) -> String {
-        firstNonEmpty([
-            simpleOneInfoValue(record, labels: ["ИНН ТСП", "ИНН", "ИНН клиента"]),
+    func simpleOneMerchantTINText(
+        _ record: SimpleOneRequestRecord,
+        fields: [ClosedRequestInfoField]? = nil
+    ) -> String {
+        let candidates = [
+            simpleOneInfoValue(
+                record,
+                labels: ["ИНН ТСП", "ИНН", "ИНН клиента"],
+                fields: fields ?? simpleOneInfoFields(record)
+            ),
             extractedLabeledValue(from: simpleOneInfoTexts(record), labels: ["ИНН ТСП", "ИНН", "ИНН клиента"])
-        ])
+        ]
+        return candidates
+            .map(ClosedRequestsMerchantTINSupport.normalizedValidTIN)
+            .first(where: { !$0.isEmpty }) ?? ""
     }
 
     func simpleOneInformationText(_ record: SimpleOneRequestRecord) -> String {

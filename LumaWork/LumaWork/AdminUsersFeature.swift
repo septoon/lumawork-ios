@@ -594,8 +594,8 @@ struct AdminUsersScreen: View {
                             )
                         } label: {
                             AdminNavigationRow(
-                                title: "Файлы Инженера",
-                                subtitle: "Wiki snapshots, IPA-релизы и метаданные Selectel",
+                                title: "Файлы инженера",
+                                subtitle: "Снимки Wiki, загрузки, релизы и SideStore",
                                 systemImage: "externaldrive.badge.icloud",
                                 tint: .blue
                             )
