@@ -68,6 +68,16 @@ nonisolated enum ClosedRequestsFilterSupport {
 }
 
 nonisolated enum ClosedRequestsIndexBuilder {
+    /// Uses the same effective date as the list, including registration dates
+    /// for equipment returns. DateInterval's end is exclusive.
+    static func records(from records: [ClosedRequestRecord], in interval: DateInterval) -> [ClosedRequestRecord] {
+        let formatters = parsingFormatters()
+        return records.filter { record in
+            guard let date = parseDate(effectiveTime(for: record, formatters: formatters), formatters: formatters) else { return false }
+            return date >= interval.start && date < interval.end
+        }
+    }
+
     static func build(records: [ClosedRequestRecord]) -> [ClosedRequestPreparedSearchEntry] {
         let formatters = parsingFormatters()
         let outputFormatter = formatter("dd.MM.yyyy HH:mm", locale: "ru_RU")
@@ -85,10 +95,7 @@ nonisolated enum ClosedRequestsIndexBuilder {
         return records.map { record in
             let requestType = localizedRequestType(record.requestType)
             let isReturnEquipment = isReturnEquipment(record.requestType)
-            let registeredAt = record.registeredAt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let effectiveTime = isReturnEquipment && parseDate(registeredAt, formatters: formatters) != nil
-                ? registeredAt
-                : record.closedAt
+            let effectiveTime = effectiveTime(for: record, formatters: formatters)
             let timeTitle = isReturnEquipment ? "Время регистрации" : "Выполнена"
             let date = parseDate(effectiveTime, formatters: formatters)
             let statusText = isReturnEquipment
@@ -159,6 +166,13 @@ nonisolated enum ClosedRequestsIndexBuilder {
             )
             return ClosedRequestPreparedSearchEntry(item: item, searchText: searchText)
         }
+    }
+
+    private static func effectiveTime(for record: ClosedRequestRecord, formatters: [DateFormatter]) -> String {
+        let registeredAt = record.registeredAt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return isReturnEquipment(record.requestType) && parseDate(registeredAt, formatters: formatters) != nil
+            ? registeredAt
+            : record.closedAt
     }
 
     private static func parseDate(_ raw: String, formatters: [DateFormatter]) -> Date? {

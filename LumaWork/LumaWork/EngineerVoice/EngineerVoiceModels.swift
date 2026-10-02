@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated enum EngineerVoicePeriod: String, CaseIterable, Sendable {
+nonisolated enum EngineerVoicePeriod: String, CaseIterable, Codable, Sendable {
     case today, yesterday, tomorrow, currentMonth, previousMonth, currentYear
 
     var title: String {
@@ -34,7 +34,7 @@ nonisolated enum EngineerVoicePeriod: String, CaseIterable, Sendable {
     }
 }
 
-nonisolated enum EngineerVoiceInformation: String, CaseIterable, Sendable {
+nonisolated enum EngineerVoiceInformation: String, CaseIterable, Codable, Sendable {
     case fuelDebt, fuelBalance, fuelSummary, mileage, compensation
     case vehicle, vin, licensePlate, sts, pts, vehicleMileage, vehicleDocuments
     case maintenance, maintenanceCosts, salary, profile, fuelCard, fuelNorm
@@ -139,8 +139,9 @@ nonisolated enum EngineerVoiceText {
             .map { $0 == "ул" ? "улица" : $0 }
     }
 
-    static func spelledIdentifier(_ value: String) -> String {
-        value.filter { !$0.isWhitespace }.map(String.init).joined(separator: ", ")
+    static func vinAnswer(_ vin: String, vehicleName: String) -> String {
+        let identifier = vin.filter { !$0.isWhitespace }
+        return "VIN автомобиля \(vehicleName): \(identifier)."
     }
 
     static func speech(_ text: String) -> String {
@@ -180,9 +181,13 @@ nonisolated enum EngineerVoiceContext {
             if text.contains("долг") || text.contains("должен") { return .fuelDebt }
         }
         if text.contains("заяв") {
+            if text.contains("закры") || text.contains("выполн") { return .closedRequests }
             if text.contains("просроч") { return .overdueRequests }
-            if text.contains("сегодня") || text.contains("срок") { return .dueRequests }
             if text.contains("актив") { return .activeRequests }
+            if text.contains("срок") { return .dueRequests }
+            if let period = EngineerVoiceText.period(in: text),
+               [.currentMonth, .previousMonth, .currentYear].contains(period) { return .closedRequests }
+            if text.contains("сегодня") || text.contains("завтра") { return .dueRequests }
         }
         if text.contains("ехать") && text.contains("дальше") { return .nextStop }
         return nil
@@ -212,6 +217,9 @@ nonisolated enum EngineerVoiceContext {
             (.adminOverview, ["сервер", "vps"])
         ]
         var result = groups.filter { $0.1.contains(where: text.contains) }.map(\.0)
+        if result.contains(.closedRequests), !text.contains("срок"), !text.contains("актив") {
+            result.removeAll { $0 == .dueRequests }
+        }
         if !EngineerVoiceText.matches("vin", in: text), !EngineerVoiceText.matches("вин", in: text) {
             result.removeAll { $0 == .vin }
         }

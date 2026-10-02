@@ -1,0 +1,1021 @@
+{
+  "bundleIdentifier": "septon.LumaWork",
+  "commands": [
+    {
+      "id": "fuelDebt.currentMonth.0",
+      "information": "fuelDebt",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Сколько бензина я должен"
+    },
+    {
+      "id": "fuelDebt.currentMonth.1",
+      "information": "fuelDebt",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Сколько топлива я должен"
+    },
+    {
+      "id": "fuelDebt.currentMonth.2",
+      "information": "fuelDebt",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Какой у меня долг за бензин"
+    },
+    {
+      "id": "fuelBalance.currentMonth.0",
+      "information": "fuelBalance",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Какой топливный баланс за этот месяц"
+    },
+    {
+      "id": "fuelBalance.currentMonth.1",
+      "information": "fuelBalance",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Какой остаток топлива по норме за этот месяц"
+    },
+    {
+      "id": "fuelBalance.previousMonth.0",
+      "information": "fuelBalance",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Топливо и пробег",
+      "title": "Какой топливный баланс за прошлый месяц"
+    },
+    {
+      "id": "fuelBalance.previousMonth.1",
+      "information": "fuelBalance",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Топливо и пробег",
+      "title": "Какой остаток топлива по норме за прошлый месяц"
+    },
+    {
+      "id": "fuelBalance.currentYear.0",
+      "information": "fuelBalance",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Топливо и пробег",
+      "title": "Какой топливный баланс за этот год"
+    },
+    {
+      "id": "fuelBalance.currentYear.1",
+      "information": "fuelBalance",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Топливо и пробег",
+      "title": "Какой остаток топлива по норме за этот год"
+    },
+    {
+      "id": "fuelSummary.currentMonth.0",
+      "information": "fuelSummary",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Сколько я заправил бензина за этот месяц"
+    },
+    {
+      "id": "fuelSummary.currentMonth.1",
+      "information": "fuelSummary",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Сколько я потратил на бензин за этот месяц"
+    },
+    {
+      "id": "fuelSummary.previousMonth.0",
+      "information": "fuelSummary",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Топливо и пробег",
+      "title": "Сколько я заправил бензина за прошлый месяц"
+    },
+    {
+      "id": "fuelSummary.previousMonth.1",
+      "information": "fuelSummary",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Топливо и пробег",
+      "title": "Сколько я потратил на бензин за прошлый месяц"
+    },
+    {
+      "id": "fuelSummary.currentYear.0",
+      "information": "fuelSummary",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Топливо и пробег",
+      "title": "Сколько я заправил бензина за этот год"
+    },
+    {
+      "id": "fuelSummary.currentYear.1",
+      "information": "fuelSummary",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Топливо и пробег",
+      "title": "Сколько я потратил на бензин за этот год"
+    },
+    {
+      "id": "mileage.today.0",
+      "information": "mileage",
+      "kind": "information",
+      "period": "today",
+      "section": "Топливо и пробег",
+      "title": "Какой пробег сегодня"
+    },
+    {
+      "id": "mileage.today.1",
+      "information": "mileage",
+      "kind": "information",
+      "period": "today",
+      "section": "Топливо и пробег",
+      "title": "Сколько я проехал сегодня"
+    },
+    {
+      "id": "mileage.yesterday.0",
+      "information": "mileage",
+      "kind": "information",
+      "period": "yesterday",
+      "section": "Топливо и пробег",
+      "title": "Какой пробег вчера"
+    },
+    {
+      "id": "mileage.yesterday.1",
+      "information": "mileage",
+      "kind": "information",
+      "period": "yesterday",
+      "section": "Топливо и пробег",
+      "title": "Сколько я проехал вчера"
+    },
+    {
+      "id": "mileage.currentMonth.0",
+      "information": "mileage",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Какой пробег за этот месяц"
+    },
+    {
+      "id": "mileage.currentMonth.1",
+      "information": "mileage",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Сколько я проехал за этот месяц"
+    },
+    {
+      "id": "mileage.previousMonth.0",
+      "information": "mileage",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Топливо и пробег",
+      "title": "Какой пробег за прошлый месяц"
+    },
+    {
+      "id": "mileage.previousMonth.1",
+      "information": "mileage",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Топливо и пробег",
+      "title": "Сколько я проехал за прошлый месяц"
+    },
+    {
+      "id": "mileage.currentYear.0",
+      "information": "mileage",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Топливо и пробег",
+      "title": "Какой пробег за этот год"
+    },
+    {
+      "id": "mileage.currentYear.1",
+      "information": "mileage",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Топливо и пробег",
+      "title": "Сколько я проехал за этот год"
+    },
+    {
+      "id": "compensation.currentMonth.0",
+      "information": "compensation",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Какая у меня компенсация за бензин за этот месяц"
+    },
+    {
+      "id": "compensation.currentMonth.1",
+      "information": "compensation",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Сколько осталось выплатить компенсации за бензин за этот месяц"
+    },
+    {
+      "id": "compensation.previousMonth.0",
+      "information": "compensation",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Топливо и пробег",
+      "title": "Какая у меня компенсация за бензин за прошлый месяц"
+    },
+    {
+      "id": "compensation.previousMonth.1",
+      "information": "compensation",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Топливо и пробег",
+      "title": "Сколько осталось выплатить компенсации за бензин за прошлый месяц"
+    },
+    {
+      "id": "compensation.currentYear.0",
+      "information": "compensation",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Топливо и пробег",
+      "title": "Какая у меня компенсация за бензин за этот год"
+    },
+    {
+      "id": "compensation.currentYear.1",
+      "information": "compensation",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Топливо и пробег",
+      "title": "Сколько осталось выплатить компенсации за бензин за этот год"
+    },
+    {
+      "id": "fuelCard.currentMonth.0",
+      "information": "fuelCard",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Какой номер моей топливной карты"
+    },
+    {
+      "id": "fuelCard.currentMonth.1",
+      "information": "fuelCard",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Какая у меня топливная карта"
+    },
+    {
+      "id": "fuelNorm.currentMonth.0",
+      "information": "fuelNorm",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Топливо и пробег",
+      "title": "Какая у меня норма расхода топлива"
+    },
+    {
+      "id": "vehicle.currentMonth.0",
+      "information": "vehicle",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какая у меня машина"
+    },
+    {
+      "id": "vehicle.currentMonth.1",
+      "information": "vehicle",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какие данные моего автомобиля"
+    },
+    {
+      "id": "vin.currentMonth.0",
+      "information": "vin",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какой у меня VIN"
+    },
+    {
+      "id": "vin.currentMonth.1",
+      "information": "vin",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какой у меня вин номер"
+    },
+    {
+      "id": "licensePlate.currentMonth.0",
+      "information": "licensePlate",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какой у меня госномер"
+    },
+    {
+      "id": "licensePlate.currentMonth.1",
+      "information": "licensePlate",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какой номер моей машины"
+    },
+    {
+      "id": "sts.currentMonth.0",
+      "information": "sts",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какой номер моего СТС"
+    },
+    {
+      "id": "pts.currentMonth.0",
+      "information": "pts",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какой номер моего ПТС"
+    },
+    {
+      "id": "vehicleMileage.currentMonth.0",
+      "information": "vehicleMileage",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какой пробег на одометре"
+    },
+    {
+      "id": "vehicleMileage.currentMonth.1",
+      "information": "vehicleMileage",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какие показания одометра"
+    },
+    {
+      "id": "vehicleDocuments.currentMonth.0",
+      "information": "vehicleDocuments",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какие документы на машину"
+    },
+    {
+      "id": "vehicleDocuments.currentMonth.1",
+      "information": "vehicleDocuments",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Какие файлы документов на машину"
+    },
+    {
+      "id": "maintenance.currentMonth.0",
+      "information": "maintenance",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Когда было последнее обслуживание машины"
+    },
+    {
+      "id": "maintenance.currentMonth.1",
+      "information": "maintenance",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Что я последний раз делал с машиной"
+    },
+    {
+      "id": "maintenanceCosts.today.0",
+      "information": "maintenanceCosts",
+      "kind": "information",
+      "period": "today",
+      "section": "Автомобиль",
+      "title": "Сколько я потратил на обслуживание машины сегодня"
+    },
+    {
+      "id": "maintenanceCosts.yesterday.0",
+      "information": "maintenanceCosts",
+      "kind": "information",
+      "period": "yesterday",
+      "section": "Автомобиль",
+      "title": "Сколько я потратил на обслуживание машины вчера"
+    },
+    {
+      "id": "maintenanceCosts.currentMonth.0",
+      "information": "maintenanceCosts",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Автомобиль",
+      "title": "Сколько я потратил на обслуживание машины за этот месяц"
+    },
+    {
+      "id": "maintenanceCosts.previousMonth.0",
+      "information": "maintenanceCosts",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Автомобиль",
+      "title": "Сколько я потратил на обслуживание машины за прошлый месяц"
+    },
+    {
+      "id": "maintenanceCosts.currentYear.0",
+      "information": "maintenanceCosts",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Автомобиль",
+      "title": "Сколько я потратил на обслуживание машины за этот год"
+    },
+    {
+      "id": "activeRequests.currentMonth.0",
+      "information": "activeRequests",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Заявки",
+      "title": "Сколько у меня активных заявок"
+    },
+    {
+      "id": "activeRequests.currentMonth.1",
+      "information": "activeRequests",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Заявки",
+      "title": "Какие у меня активные заявки"
+    },
+    {
+      "id": "dueRequests.today.0",
+      "information": "dueRequests",
+      "kind": "information",
+      "period": "today",
+      "section": "Заявки",
+      "title": "Сколько у меня заявок сегодня"
+    },
+    {
+      "id": "dueRequests.yesterday.0",
+      "information": "dueRequests",
+      "kind": "information",
+      "period": "yesterday",
+      "section": "Заявки",
+      "title": "Сколько у меня заявок вчера"
+    },
+    {
+      "id": "dueRequests.tomorrow.0",
+      "information": "dueRequests",
+      "kind": "information",
+      "period": "tomorrow",
+      "section": "Заявки",
+      "title": "Сколько у меня заявок завтра"
+    },
+    {
+      "id": "dueRequests.currentMonth.0",
+      "information": "closedRequests",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Заявки",
+      "title": "Сколько у меня заявок за этот месяц"
+    },
+    {
+      "id": "dueRequests.previousMonth.0",
+      "information": "closedRequests",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Заявки",
+      "title": "Сколько у меня заявок за прошлый месяц"
+    },
+    {
+      "id": "dueRequests.currentYear.0",
+      "information": "closedRequests",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Заявки",
+      "title": "Сколько у меня заявок за этот год"
+    },
+    {
+      "id": "overdueRequests.currentMonth.0",
+      "information": "overdueRequests",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Заявки",
+      "title": "Сколько у меня просроченных заявок"
+    },
+    {
+      "id": "overdueRequests.currentMonth.1",
+      "information": "overdueRequests",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Заявки",
+      "title": "Какие заявки я просрочил"
+    },
+    {
+      "id": "closedRequests.today.0",
+      "information": "closedRequests",
+      "kind": "information",
+      "period": "today",
+      "section": "Заявки",
+      "title": "Сколько я закрыл заявок сегодня"
+    },
+    {
+      "id": "closedRequests.yesterday.0",
+      "information": "closedRequests",
+      "kind": "information",
+      "period": "yesterday",
+      "section": "Заявки",
+      "title": "Сколько я закрыл заявок вчера"
+    },
+    {
+      "id": "closedRequests.currentMonth.0",
+      "information": "closedRequests",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Заявки",
+      "title": "Сколько я закрыл заявок за этот месяц"
+    },
+    {
+      "id": "closedRequests.previousMonth.0",
+      "information": "closedRequests",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Заявки",
+      "title": "Сколько я закрыл заявок за прошлый месяц"
+    },
+    {
+      "id": "closedRequests.currentYear.0",
+      "information": "closedRequests",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Заявки",
+      "title": "Сколько я закрыл заявок за этот год"
+    },
+    {
+      "id": "returnEquipment.currentMonth.0",
+      "information": "returnEquipment",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Заявки",
+      "title": "Какие у меня заявки на возврат оборудования"
+    },
+    {
+      "id": "coordination.currentMonth.0",
+      "information": "coordination",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Заявки",
+      "title": "Сколько заявок у моей группы"
+    },
+    {
+      "id": "coordination.currentMonth.1",
+      "information": "coordination",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Заявки",
+      "title": "Что по заявкам нашей группы"
+    },
+    {
+      "id": "route.today.0",
+      "information": "route",
+      "kind": "information",
+      "period": "today",
+      "section": "Маршрут",
+      "title": "Что у меня по маршруту сегодня"
+    },
+    {
+      "id": "route.yesterday.0",
+      "information": "route",
+      "kind": "information",
+      "period": "yesterday",
+      "section": "Маршрут",
+      "title": "Что у меня по маршруту вчера"
+    },
+    {
+      "id": "route.tomorrow.0",
+      "information": "route",
+      "kind": "information",
+      "period": "tomorrow",
+      "section": "Маршрут",
+      "title": "Что у меня по маршруту завтра"
+    },
+    {
+      "id": "nextStop.today.0",
+      "information": "nextStop",
+      "kind": "information",
+      "period": "today",
+      "section": "Маршрут",
+      "title": "Куда мне ехать дальше"
+    },
+    {
+      "id": "nextStop.today.1",
+      "information": "nextStop",
+      "kind": "information",
+      "period": "today",
+      "section": "Маршрут",
+      "title": "Какая следующая точка маршрута"
+    },
+    {
+      "id": "backpack.currentMonth.0",
+      "information": "backpack",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Оборудование",
+      "title": "Что у меня в рюкзаке"
+    },
+    {
+      "id": "backpack.currentMonth.1",
+      "information": "backpack",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Оборудование",
+      "title": "Сколько оборудования в моём рюкзаке"
+    },
+    {
+      "id": "officeEquipment.currentMonth.0",
+      "information": "officeEquipment",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Оборудование",
+      "title": "Какое оборудование за мной закреплено"
+    },
+    {
+      "id": "officeEquipment.currentMonth.1",
+      "information": "officeEquipment",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Оборудование",
+      "title": "Какое у меня оборудование"
+    },
+    {
+      "id": "workSchedule.today.0",
+      "information": "workSchedule",
+      "kind": "information",
+      "period": "today",
+      "section": "График и трудозатраты",
+      "title": "Я сегодня работаю"
+    },
+    {
+      "id": "workSchedule.today.1",
+      "information": "workSchedule",
+      "kind": "information",
+      "period": "today",
+      "section": "График и трудозатраты",
+      "title": "Какой у меня график сегодня"
+    },
+    {
+      "id": "workSchedule.tomorrow.0",
+      "information": "workSchedule",
+      "kind": "information",
+      "period": "tomorrow",
+      "section": "График и трудозатраты",
+      "title": "Я завтра работаю"
+    },
+    {
+      "id": "workSchedule.tomorrow.1",
+      "information": "workSchedule",
+      "kind": "information",
+      "period": "tomorrow",
+      "section": "График и трудозатраты",
+      "title": "Какой у меня график завтра"
+    },
+    {
+      "id": "workSchedule.yesterday.0",
+      "information": "workSchedule",
+      "kind": "information",
+      "period": "yesterday",
+      "section": "График и трудозатраты",
+      "title": "Сколько часов по графику вчера"
+    },
+    {
+      "id": "workSchedule.currentMonth.0",
+      "information": "workSchedule",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "График и трудозатраты",
+      "title": "Какой у меня график за этот месяц"
+    },
+    {
+      "id": "workSchedule.previousMonth.0",
+      "information": "workSchedule",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "График и трудозатраты",
+      "title": "Какой у меня график за прошлый месяц"
+    },
+    {
+      "id": "timeReports.today.0",
+      "information": "timeReports",
+      "kind": "information",
+      "period": "today",
+      "section": "График и трудозатраты",
+      "title": "Какие у меня трудозатраты сегодня"
+    },
+    {
+      "id": "timeReports.today.1",
+      "information": "timeReports",
+      "kind": "information",
+      "period": "today",
+      "section": "График и трудозатраты",
+      "title": "Сколько времени я указал в отчётах сегодня"
+    },
+    {
+      "id": "timeReports.yesterday.0",
+      "information": "timeReports",
+      "kind": "information",
+      "period": "yesterday",
+      "section": "График и трудозатраты",
+      "title": "Какие у меня трудозатраты вчера"
+    },
+    {
+      "id": "timeReports.yesterday.1",
+      "information": "timeReports",
+      "kind": "information",
+      "period": "yesterday",
+      "section": "График и трудозатраты",
+      "title": "Сколько времени я указал в отчётах вчера"
+    },
+    {
+      "id": "timeReports.currentMonth.0",
+      "information": "timeReports",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "График и трудозатраты",
+      "title": "Какие у меня трудозатраты за этот месяц"
+    },
+    {
+      "id": "timeReports.currentMonth.1",
+      "information": "timeReports",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "График и трудозатраты",
+      "title": "Сколько времени я указал в отчётах за этот месяц"
+    },
+    {
+      "id": "timeReports.previousMonth.0",
+      "information": "timeReports",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "График и трудозатраты",
+      "title": "Какие у меня трудозатраты за прошлый месяц"
+    },
+    {
+      "id": "timeReports.previousMonth.1",
+      "information": "timeReports",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "График и трудозатраты",
+      "title": "Сколько времени я указал в отчётах за прошлый месяц"
+    },
+    {
+      "id": "timeReports.currentYear.0",
+      "information": "timeReports",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "График и трудозатраты",
+      "title": "Какие у меня трудозатраты за этот год"
+    },
+    {
+      "id": "timeReports.currentYear.1",
+      "information": "timeReports",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "График и трудозатраты",
+      "title": "Сколько времени я указал в отчётах за этот год"
+    },
+    {
+      "id": "salary.today.0",
+      "information": "salary",
+      "kind": "information",
+      "period": "today",
+      "section": "Выплаты и профиль",
+      "title": "Сколько мне выплатили зарплаты сегодня"
+    },
+    {
+      "id": "salary.yesterday.0",
+      "information": "salary",
+      "kind": "information",
+      "period": "yesterday",
+      "section": "Выплаты и профиль",
+      "title": "Сколько мне выплатили зарплаты вчера"
+    },
+    {
+      "id": "salary.currentMonth.0",
+      "information": "salary",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Выплаты и профиль",
+      "title": "Сколько мне выплатили зарплаты за этот месяц"
+    },
+    {
+      "id": "salary.previousMonth.0",
+      "information": "salary",
+      "kind": "information",
+      "period": "previousMonth",
+      "section": "Выплаты и профиль",
+      "title": "Сколько мне выплатили зарплаты за прошлый месяц"
+    },
+    {
+      "id": "salary.currentYear.0",
+      "information": "salary",
+      "kind": "information",
+      "period": "currentYear",
+      "section": "Выплаты и профиль",
+      "title": "Сколько мне выплатили зарплаты за этот год"
+    },
+    {
+      "id": "profile.currentMonth.0",
+      "information": "profile",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Выплаты и профиль",
+      "title": "Какие у меня данные профиля"
+    },
+    {
+      "id": "profile.currentMonth.1",
+      "information": "profile",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Выплаты и профиль",
+      "title": "Какой у меня табельный номер"
+    },
+    {
+      "id": "profile.currentMonth.2",
+      "information": "profile",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Выплаты и профиль",
+      "title": "Какая у меня рабочая почта"
+    },
+    {
+      "id": "workDocuments.currentMonth.0",
+      "information": "workDocuments",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Документы и сервисы",
+      "title": "Какие у меня рабочие документы"
+    },
+    {
+      "id": "feedback.currentMonth.0",
+      "information": "feedback",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Документы и сервисы",
+      "title": "Что с моими обращениями"
+    },
+    {
+      "id": "feedback.currentMonth.1",
+      "information": "feedback",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Документы и сервисы",
+      "title": "Какие у меня обращения"
+    },
+    {
+      "id": "ftpFiles.currentMonth.0",
+      "information": "ftpFiles",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Документы и сервисы",
+      "title": "Какие папки на FTP"
+    },
+    {
+      "id": "adminOverview.currentMonth.0",
+      "information": "adminOverview",
+      "kind": "information",
+      "period": "currentMonth",
+      "section": "Документы и сервисы",
+      "title": "Как работает наш сервер"
+    },
+    {
+      "id": "request",
+      "kind": "request",
+      "period": "today",
+      "section": "Заявки",
+      "title": "Что по заявке"
+    },
+    {
+      "id": "wiki",
+      "kind": "wiki",
+      "period": "today",
+      "section": "Документы и сервисы",
+      "title": "Найди рабочую инструкцию"
+    },
+    {
+      "id": "ask",
+      "kind": "ask",
+      "period": "today",
+      "section": "Документы и сервисы",
+      "title": "По работе"
+    }
+  ],
+  "workflows": {
+    "activeRequests.currentMonth.0": "016688d1e54e1a9b240540d0b4b2db8e90398d5b4253c18b772f10b996d04db4",
+    "activeRequests.currentMonth.1": "2f9973c8b15cb51718292e9e78b0571a730d4d5d27b51f19886eedbf9b81d8fb",
+    "adminOverview.currentMonth.0": "a67d8d45d219b2b3a80717e01f02ba70d6700c8e97123fb22a701a86dbdc0ffb",
+    "ask": "ab3fb23a283a6423f07d91660557b1c688a2cfcde1e97b6ada7c4005bd37e0da",
+    "backpack.currentMonth.0": "70b0c74ae69fe65add6b710c4c726d7511696d8c5c7d92452ee962ab4e3354a8",
+    "backpack.currentMonth.1": "d0a0fa12a34036b0fd7de201f70260b515a02c21d9046ade7049496eb11aed5e",
+    "closedRequests.currentMonth.0": "360162c2cf07fcb2f2513c395d83181908d7a34bf67fcdc6c766ca98ea49e960",
+    "closedRequests.currentYear.0": "4dae7a8839aaadf575a3d46ea9f43c164962ca8e2d7dee1ae5c296cf2682df78",
+    "closedRequests.previousMonth.0": "8479e28f87911a57c211a290cd9e80033e64efbd4a03986f80b60a60ab7dc746",
+    "closedRequests.today.0": "907ff00e83a05377b954cefcc3da3c23b0b9a4791fef6e4862a61e2db46c3d3e",
+    "closedRequests.yesterday.0": "75381adac87f9cec8bca325754dd57e1c3abc5d4fc3f4c71c41bd7431aa8cb61",
+    "compensation.currentMonth.0": "e501e3c714263673006bff9bb3e78e5aa0a172762e7008d7726df86a72500339",
+    "compensation.currentMonth.1": "8a705cf4a2f74cd95473615bb54aac2a8cee104fa0b05347caeff2a8e50e3481",
+    "compensation.currentYear.0": "76e41fbc2223eb2b086d6a519c2dc6478688854f01f1bd286eda49e39245d508",
+    "compensation.currentYear.1": "87b63b8ba6947905c6fee5b6f58d03b03bb989075d7adde97e4e47bfa1a03e08",
+    "compensation.previousMonth.0": "7792efa53095640ac1fd767d1b72de0f30f28391c9f7489d7b0cda48b5ad440e",
+    "compensation.previousMonth.1": "bd6dfd75638c3d03f44d530feb8c70c364cd8206147dcdc63f48cff96105a765",
+    "coordination.currentMonth.0": "7039ec277eabd993cb03e2697a49b624664328ec894632ffe31f8170e3b90954",
+    "coordination.currentMonth.1": "8ae16010d45f7353a9a9312773544104e937e250e3a765e2c05388073ceed2bc",
+    "dueRequests.currentMonth.0": "27591fd1f5e10f75ecaa88f01f7df003bd8afaa5a69e0d7fd2de01b9e5a66469",
+    "dueRequests.currentYear.0": "a1d79800b8716b2f08ad12ca25c9a19bed151465ebb20685dbf68f6962609eda",
+    "dueRequests.previousMonth.0": "a24eebc269648f0d5dcfe77257c41369f305f51daaefcb2c35070699989563bd",
+    "dueRequests.today.0": "8cea88bce4548671cf94c40d43885733f3a4593159ceb160be99d9b7ae361ab3",
+    "dueRequests.tomorrow.0": "f317ee48fe4746b1fe51bd16d334855db5c0ceba3fe1c18284c46878ea8dd827",
+    "dueRequests.yesterday.0": "e38ff64faab4cd0d8ca379e9752536216644f632be218474fa73aba7bb5cdea2",
+    "feedback.currentMonth.0": "85fcf83cd20e14683bbde69b770426d873616f3b52172e73466c7c281f1fe3f6",
+    "feedback.currentMonth.1": "ab554bbf5f395482f8416987a21cd1ba503425a57a40b2ae5d0ca1f3995fa603",
+    "ftpFiles.currentMonth.0": "5a2ab35f1936973d3dd24669b4fddc7757ac1969579fba6abfcb6882761687bc",
+    "fuelBalance.currentMonth.0": "4f73b5a21583ea459ef0a702eb33e92426821f0066664cb66c3b44d0caa3f88f",
+    "fuelBalance.currentMonth.1": "c02a1a7a974c9e44309179a3341215037d542e7b7c4738a3803a954263ad9e63",
+    "fuelBalance.currentYear.0": "8e21cea40001d859524da9d18ddcc042a42ba24dfbc4b481dcfa5b2a928a9a4d",
+    "fuelBalance.currentYear.1": "0b5c37651f183de22bd4305e711c037fa3030535a2b393d5bec9aefac17d377f",
+    "fuelBalance.previousMonth.0": "63266e0911b2f595fa373e3756a1fe2bf977482b43aa6d4f03debbbe179d80c8",
+    "fuelBalance.previousMonth.1": "9bf057f5fc35a896e0a65fc4521c5fbb6b945b7c3117111604909f73aa186c11",
+    "fuelCard.currentMonth.0": "ac367dcb53c64610c4707c8ac388f11a788fb3633905ff384d1202254330e82e",
+    "fuelCard.currentMonth.1": "e6e67322fe491d651ec5fe5d83a26fc481376ff8a64149e56d910ecce2aa7c10",
+    "fuelDebt.currentMonth.0": "e57a43a1316083d22c6f6e51a3452e61be551eddaf90c5178abb282f10ece98c",
+    "fuelDebt.currentMonth.1": "16c79d94f78efca17aa52c439dfd33ce4a19de46152550bc2c999dabbb2b18c7",
+    "fuelDebt.currentMonth.2": "b2a7fb37cabe4e01e84c066250dd9c47872f2c538895ef596cc1a4aa13148a89",
+    "fuelNorm.currentMonth.0": "55114278de7d1401a49d29bca109e5f852dab786ef03b2566d9a6593c615b84e",
+    "fuelSummary.currentMonth.0": "573644e092b3292e8dacf6a09dd44dd50857faf0230ff901184d380e20645964",
+    "fuelSummary.currentMonth.1": "2247b706435ec8923043ac3f6597792926e6eea91bd3c51e8097ecd8634e0327",
+    "fuelSummary.currentYear.0": "abccb9a2027b591a3dd05dedd79399e48bcb2309b76fad36b2dae71566879444",
+    "fuelSummary.currentYear.1": "dd63e41b8331ef3bc9800f409d3d39004469f13d64122bf9217a0a339dea776e",
+    "fuelSummary.previousMonth.0": "43e2d0788f8c3330ea925c078239299b27d553825e06857ac29c060db67db253",
+    "fuelSummary.previousMonth.1": "3cbc8777c63fee5486da19d9f204bfad93be93a18e1f0eaa7896b4a8a5b0513e",
+    "licensePlate.currentMonth.0": "8be421c76f0837d880ec50291a3de7bb0a6348c8b5a32f7416650a9bc711bb4a",
+    "licensePlate.currentMonth.1": "eb2deb6da6bbaf8fe65c23b5e268284598cc5f061d04e00792f0d1a6f3b4b1c7",
+    "maintenance.currentMonth.0": "169b41abe72cd641fdfbe3e29c4b4b7e3be519a66084151e9bbe1e50b7ba768b",
+    "maintenance.currentMonth.1": "084f7343df7066f61a4c1bbf52ae6dd5a7c479dcc07933e6e52ef5efb884f68f",
+    "maintenanceCosts.currentMonth.0": "507a62181bc25883773eb26571f695fefee610d4bf4e8f0a75d5019b64bf3317",
+    "maintenanceCosts.currentYear.0": "74db7ffd37e98728ee87167170202658e76976954168da03eef513bc408773c2",
+    "maintenanceCosts.previousMonth.0": "4242585a67ded55833e3aa146883907b75b7b8baa3e6db78f9da92cee56841b1",
+    "maintenanceCosts.today.0": "5c843e77a56a6ebd15c9ab4ee7b45804231c743574c5bc2f2437847d456a12e0",
+    "maintenanceCosts.yesterday.0": "afb3ef077d82ab64298dab661b32725379ce93e24995d8180d15ef386bcfd27b",
+    "mileage.currentMonth.0": "d12e4a9cb96b3e1d1c38bec00d5dbc27edcf3b88863cb83af8e296fd31b222a1",
+    "mileage.currentMonth.1": "9519b550de2fb09b45516f91e8e2192897234cc7c6a920be434119235c19c003",
+    "mileage.currentYear.0": "c4ea4c40dfef841f08b5df922cc480f8f66f786d98a22e96110103686b1c5f61",
+    "mileage.currentYear.1": "fed517f5a5fa512fbae37baf37af64544e3cc558dd2a2a6fd79d637d27654dec",
+    "mileage.previousMonth.0": "f8b85c0514bb5a4a87e18290d2a73e5999ca946e9845a99536dfcc852b5f9537",
+    "mileage.previousMonth.1": "07d80b219f3a8719cc1b51323fd03a1268fff541c680df8457cc119a2af876d6",
+    "mileage.today.0": "a512f4a3097bf91f079f76c83d27780a187ec88cfd7edd9cbb58f055d2a311bc",
+    "mileage.today.1": "b38f6dfee770f0c8fbbe9f74cbcd8398c9d66e2cd9eac60e31e3897ccffebdef",
+    "mileage.yesterday.0": "80c369afe31bc65cfcdd2b3642775d84c390aa880f19fdbc78f2c7e030a0fb2a",
+    "mileage.yesterday.1": "5f32c63223e901923135b71b96072a935f181ac0010045f149de8f49af303ffd",
+    "nextStop.today.0": "46d6d3abfbbf55de2b7e19d919b0189c9f0c6c3bfc473bbf4eee8e45df0ce39f",
+    "nextStop.today.1": "8e32922ec8c1042c01212be78d681639b0cf030432e53dd0121e76848f2a95bc",
+    "officeEquipment.currentMonth.0": "2da6af5fdadf2c5deb93c1978e905acc1d0d6567e252607639bbb63cd85d653a",
+    "officeEquipment.currentMonth.1": "d76f963e7e5cb99a802766afa29d6394698642aa494ff8e574aa7362b2ecea9e",
+    "overdueRequests.currentMonth.0": "8b172ff7397c9bd3708e24cd1b0daa9b45aac9f4164a47cac07dc7d26157fdf1",
+    "overdueRequests.currentMonth.1": "5ec5efc57416e068e8c5fe88b51c7cc4ed895b33b024dd454a92cb4ca7776b98",
+    "profile.currentMonth.0": "67fb60d48c8ab87a4ec8479d9ff5dd78d736a8f4c4716273bc7a858ea7f5d23a",
+    "profile.currentMonth.1": "ef71f9219519b5cfae2bf95ad483f09a73401431d66cfff94adad53af704fd03",
+    "profile.currentMonth.2": "6789708a37e7b3128ef1f77b933d2b5bf76fa1da237b64f34930631bded9cfbe",
+    "pts.currentMonth.0": "95e63e44e7e5206a37c688b55dbcf9fb484c7948c882e91e3526179bb71dbd30",
+    "request": "c839a1b4f1ce59931f51d91ea4403df19f63ed70f31da7d6fc290e2a72c1c90e",
+    "returnEquipment.currentMonth.0": "87ccce54535e7ddbb5d2eda21c41db9215a34b626a9a13dc828cde803f94d5b4",
+    "route.today.0": "c5fe91bb35326bc64f7c75a9473361ee76d72d49ceec87a5ccb931823ae85f41",
+    "route.tomorrow.0": "3e775b5aa5fd6a954b96463a17e41afce8f8ba4b64bf03d3dfffb0c076d8bcc9",
+    "route.yesterday.0": "5d1d0e08c4a9dbd25d4358e40a941b9a9d14d6c5f033a0393b8ef28662ad668c",
+    "salary.currentMonth.0": "59775cf714e065dc6db1b6b21434ae26f9772eb8dc22962efa7a7b27c7a65aff",
+    "salary.currentYear.0": "bf938eb60c17a66f317adadc3c8011e0be829c0271270a16e03c0485d8ef7b0f",
+    "salary.previousMonth.0": "16b610adb53ff5ad887f9111f38cd01a006ea77504eb021487541c89524fae6d",
+    "salary.today.0": "c4f6f4e96d1d336ec21f12d88c3302f95e1c4b270a90e5e72bfc8f773b40d7a3",
+    "salary.yesterday.0": "75974287aaf9d9266a02a413170a8fc078f992441b8ecbf38648bf3f4879ee51",
+    "sts.currentMonth.0": "e48a14d528f31adf0dc044f2f17c63df6af527ddec8a322aee80f714568aec1f",
+    "timeReports.currentMonth.0": "9a967c4f948df076eb7e6b5368ab841bb4978f613ea505dd4e8a01b5ac2df0e6",
+    "timeReports.currentMonth.1": "69b76e44890694d8971a43b4c2b65084ee9bee5119a8c1c4e7d1626152225942",
+    "timeReports.currentYear.0": "5dc816ad4d4653360a6e400efb39a4cc610c1a4e905b83f5a65eb95270963bde",
+    "timeReports.currentYear.1": "71760f5723eeebd6bf8291f44ff7279fa1cb79e5c0ceb74caa23c8a08864e91a",
+    "timeReports.previousMonth.0": "27d04b4419705cf295f5a9655aa7af22e1f4e2d84c2ca5d447200b6641cd08f1",
+    "timeReports.previousMonth.1": "b641515d83a29286719c3db759a9659a2279d44cc783517fb993b242bfaba617",
+    "timeReports.today.0": "c9f8fe9c6e6f890472f87dbd87969e4faa44dacd7265edaa858c4d67dfd9ee26",
+    "timeReports.today.1": "125b117e849ec89cc95256dfaa20f241b582b43ecf8aad2720acd1f7d85de72e",
+    "timeReports.yesterday.0": "513ca75b4f481861281a4dee4caecca38cb105fa6a5325aaa60c85ef9dcf6b61",
+    "timeReports.yesterday.1": "f72da75906ff49f1bccb35fa2f5d0f3cc7598293de1e4cdb9688045eb1a2b904",
+    "vehicle.currentMonth.0": "742f29b9367c5f5c64267151b3f1e90799cdb4475b97446db93c6c65250337bf",
+    "vehicle.currentMonth.1": "41a956cea5d32ef6092cc300ef2d143c492817e452dad6c3cd0b4cad6f1a6af3",
+    "vehicleDocuments.currentMonth.0": "5cc4bd493b8b4ec02d4841a8b15b24d9043ac1829a2aecf78257057a70ff7b93",
+    "vehicleDocuments.currentMonth.1": "c299a29f5acc80d7d989bd53d7b2ed90b47439f87a0ca4388eea86b86474ae17",
+    "vehicleMileage.currentMonth.0": "d0d1e71d27be99d85daafd44a313fb1412fe5af34c675424405cc9855679e2bb",
+    "vehicleMileage.currentMonth.1": "86a176c5fb430872b160e05c3cdfe23249bd803784fcdb522ade0033eec98294",
+    "vin.currentMonth.0": "5fff43b1c07a4a09d88a1929099c8f35d55bf2e064245126e680bcd2ba8dcb9c",
+    "vin.currentMonth.1": "39eef3a8f599e7fc33cc5675564605fe2ed12cd2cb70428d9b151ce4192bbf2a",
+    "wiki": "8dd90a94e500a70f7e024d2abe173a32cf854450faf0b07f24214db387d81606",
+    "workDocuments.currentMonth.0": "826b20b4b43f25a018841729b0e39dc0da234f23c6962e79dcf87a4141db255d",
+    "workSchedule.currentMonth.0": "17932ecea8bab13f81469b6e1c2bc1128d0b99e22d5abb621af2995c2e183134",
+    "workSchedule.previousMonth.0": "8d690af1bc1266ab00fcdf34789dbab2680843bf18c69155e21efa6eecc029fd",
+    "workSchedule.today.0": "839a9cd407b2921b710acdf6880fd9dfe90e41fcaaf9683f8cfe92acb13a0a14",
+    "workSchedule.today.1": "25b6684b3857388662da520276dd3351c7f1f39d46dd942961b69e8887b8dc29",
+    "workSchedule.tomorrow.0": "423c585b9e892d124fc4e8e929d15094ce705799288e9cf47c44067f4e170c3f",
+    "workSchedule.tomorrow.1": "92b9e9759040b89d63f08c896406c6b5cbd766a00ac2137db0c0461b4137739d",
+    "workSchedule.yesterday.0": "1c5f0351b9f56663425673fcfbf29f7ab318a9bfad980d6c18b43706f2db0077"
+  }
+}

@@ -27,6 +27,18 @@ final class ClosedRequestsStore {
         snapshot?.records ?? []
     }
 
+    /// Read the archive shown by the Closed tab without constructing a store or
+    /// starting a sync. Unowned legacy archives must be refreshed in the app.
+    nonisolated static func voiceSnapshot(for userID: String) -> (records: [ClosedRequestRecord], updatedAt: Date)? {
+        guard !userID.isEmpty,
+              let data = try? Data(contentsOf: snapshotFileURL()),
+              let snapshot = try? JSONDecoder().decode(ClosedRequestsSnapshot.self, from: data),
+              snapshot.syncState?.userID == userID else { return nil }
+        let updatedAt = [snapshot.importedAt, snapshot.syncState?.lastNarrowSuccessAt, snapshot.syncState?.lastWideSuccessAt]
+            .compactMap { $0 }.max() ?? snapshot.importedAt
+        return (snapshot.records, updatedAt)
+    }
+
     var needsMerchantTINRepair: Bool {
         snapshot != nil && !UserDefaults.standard.bool(forKey: merchantTINRepairStorageKey)
     }

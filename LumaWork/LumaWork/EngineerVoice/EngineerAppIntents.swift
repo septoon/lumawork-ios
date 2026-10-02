@@ -87,6 +87,30 @@ struct EngineerInformationIntent: AppIntent {
     }
 }
 
+struct EngineerPresetQuestionIntent: AppIntent {
+    static let title: LocalizedStringResource = "Ответить на готовый вопрос"
+    static let description = IntentDescription("Готовая команда из каталога Siri в Инженере. Период и данные уже выбраны.")
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
+
+    @Parameter(title: "Команда")
+    var commandID: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Ответить на готовый вопрос") { \.$commandID }
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+        let text = await engineerVoiceAnswer { service in
+            guard let command = EngineerShortcutCatalog.command(id: commandID), let information = command.information else {
+                throw AppServiceError.message("Команда не найдена. Добавьте её заново из раздела «Siri и команды» в Инженере.")
+            }
+            return try await service.answer(information, period: command.period)
+        }
+        return .result(value: text, dialog: "\(text)")
+    }
+}
+
 struct EngineerMileageIntent: AppIntent {
     static let title: LocalizedStringResource = "Узнать пробег"
     static let description = IntentDescription("Учтённый пробег по данным Инженера за выбранный период.")

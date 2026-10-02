@@ -224,7 +224,7 @@ final class EngineerVoiceDataService {
             switch information {
             case .vin:
                 guard let vin = UserProfileData.clean(car.vin) else { throw AppServiceError.message("VIN не заполнен.") }
-                result = "VIN автомобиля \(car.displayName): \(EngineerVoiceText.spelledIdentifier(vin))."
+                result = EngineerVoiceText.vinAnswer(vin, vehicleName: car.displayName)
             case .licensePlate: result = "Госномер: \(car.licensePlate ?? "не заполнен")."
             case .sts: result = "Номер СТС: \(car.sts ?? "не заполнен")."
             case .pts: result = "Номер ПТС: \(car.pts ?? "не заполнен")."
@@ -342,16 +342,13 @@ final class EngineerVoiceDataService {
 
         case .closedRequests:
             let auth = try await simpleOneSession()
-            guard let snapshot = ClosedSimpleOneRequestsStore.completeVoiceSnapshot(for: auth.user.sysID) else {
-                throw AppServiceError.message("Откройте архив закрытых заявок в Инженере и дождитесь полной загрузки.")
+            guard let snapshot = ClosedRequestsStore.voiceSnapshot(for: auth.user.sysID) else {
+                throw AppServiceError.message("Откройте раздел «Заявки → Закрытые» в Инженере и дождитесь обновления архива.")
             }
-            let records = snapshot.records.filter {
-                EngineerVoiceText.isCurrentAssignee(id: $0.assignedUserID, name: $0.assignedUser, userID: auth.user.sysID, username: auth.user.username, displayName: auth.user.displayName)
-                    && (parseDate($0.closedAt ?? "") ?? parseDate($0.resolvedAt)).map { period.contains($0) } == true
-            }
+            let records = ClosedRequestsIndexBuilder.records(from: snapshot.records, in: period.interval())
             cachedFallbackDates.append(snapshot.updatedAt)
             result = "Ваших закрытых заявок за период «\(period.title)»: \(records.count). "
-                + records.prefix(3).map { "\($0.number): \($0.resolution ?? $0.engineerComment)" }.joined(separator: ". ")
+                + records.prefix(3).map { "\($0.requestNumber): \($0.resolution ?? $0.engineerComment)" }.joined(separator: ". ")
 
         case .returnEquipment:
             let auth = try await simpleOneSession()
