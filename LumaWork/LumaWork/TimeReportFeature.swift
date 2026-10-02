@@ -13,7 +13,7 @@ struct TimeReportScreen: View {
     @State private var isSpreadsheetImporterPresented = false
     @State private var isSpreadsheetExporterPresented = false
     @State private var exportDocument = XLSXExportDocument()
-    @State private var exportFileName = "LumaWork-time-report.xlsx"
+    @State private var exportFileName = "Инженер-time-report.xlsx"
     @State private var cleanupRangeSelection: LocalArchiveCleanupRange?
     @State private var isDeleteAllConfirmationPresented = false
     @State private var browserDestination: SimpleOneBrowserDestination?
@@ -580,7 +580,7 @@ struct TimeReportScreen: View {
     private func exportTimeReport() {
         do {
             let data = try XLSXArchiveExporter.makeTimeReportWorkbook(entries: store.entries)
-            exportFileName = "LumaWork-time-report-\(Self.exportDateFormatter.string(from: Date())).xlsx"
+            exportFileName = "Инженер-time-report-\(Self.exportDateFormatter.string(from: Date())).xlsx"
             exportDocument = XLSXExportDocument(data: data)
             isSpreadsheetExporterPresented = true
         } catch {

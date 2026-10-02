@@ -112,7 +112,7 @@ private struct LumaWorkNotificationsAPI {
         body: Body? = Optional<String>.none
     ) async throws -> Response {
         guard let authToken, !authToken.isEmpty else {
-            throw AppServiceError.message("Сессия LumaWork недоступна.")
+            throw AppServiceError.message("Сессия приложения «Инженер» недоступна.")
         }
 
         var request = URLRequest(
@@ -473,7 +473,7 @@ struct NotificationSettingsScreen: View {
                     get: { store.preferences.emailAssigneeChanges },
                     set: store.setEmailAssigneeChanges
                 ))
-                Text("Письма отправляет сервер LumaWork. SMTP-пароль не хранится в приложении.")
+                Text("Письма отправляет сервер приложения «Инженер». SMTP-пароль не хранится в приложении.")
                     .font(.footnote)
                     .foregroundStyle(AppTheme.mutedTint)
             }

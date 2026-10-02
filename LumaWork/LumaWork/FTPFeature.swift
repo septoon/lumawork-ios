@@ -69,7 +69,7 @@ struct FTPAPI {
         timeout: TimeInterval = 60
     ) throws -> URLRequest {
         guard let authToken, !authToken.isEmpty else {
-            throw AppServiceError.message("Сессия LumaWork недоступна. Войдите заново.")
+            throw AppServiceError.message("Сессия приложения «Инженер» недоступна. Войдите заново.")
         }
         var components = URLComponents(
             url: origin.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))),

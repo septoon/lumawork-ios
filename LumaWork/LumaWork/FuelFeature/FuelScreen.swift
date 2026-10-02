@@ -731,7 +731,7 @@ struct FuelScreen: View {
     }
 
     private func updateProjection(for records: [FuelRecord]) {
-        projection = FuelProjection(records: records.filter(FuelArchivePolicy.isCurrent))
+        projection = FuelProjection.current(records: records)
 
         guard let selectedYear else {
             self.selectedYear = projection.years.first

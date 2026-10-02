@@ -28,7 +28,7 @@ struct ClosedRequestsScreen: View {
     @State var isSpreadsheetImporterPresented = false
     @State var isSpreadsheetExporterPresented = false
     @State var exportDocument = XLSXExportDocument()
-    @State var exportFileName = "LumaWork.xlsx"
+    @State var exportFileName = "Инженер.xlsx"
     @State var selectedRequestRoute: RequestDetailRoute?
     @State var searchEntries: [SearchEntry] = []
     @State var closedRequestsCache: [ClosedRequestRecord] = []

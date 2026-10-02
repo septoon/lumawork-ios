@@ -1355,7 +1355,7 @@ private struct AppSidebarSettingsPlaceholder: View {
 
     private func settingsIcon(_ systemImage: String, tint: Color) -> some View {
         Image(systemName: systemImage)
-            .font(.system(size: 17, weight: .medium))
+            .font(.system(size: 15, weight: .medium))
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(.white)
             .frame(width: 30, height: 30)

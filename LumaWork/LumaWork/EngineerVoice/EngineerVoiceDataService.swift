@@ -67,11 +67,15 @@ final class EngineerVoiceDataService {
         ) + "."
     }
 
-    private func fuel() async throws -> FuelSummary {
+    private func fuel(currentBalance: Bool) async throws -> FuelSummary {
         let service = FuelService(config: config, authToken: session.token)
         let records = try await load([FuelRecord].self, key: "fuel") { try await service.fetchRecords() }
         guard !records.isEmpty else { throw AppServiceError.message("Данных по ГСМ пока нет.") }
-        return FuelSummaryCalculator.build(records: records)
+        let projection = currentBalance ? FuelProjection.current(records: records) : FuelProjection(records: records)
+        guard projection.summary.hasData else {
+            throw AppServiceError.message("В текущем разделе «Топливо» пока нет данных.")
+        }
+        return projection.summary
     }
 
     private func vehicles() async throws -> [Vehicle] {
@@ -188,15 +192,14 @@ final class EngineerVoiceDataService {
                 guard records.allSatisfy({ $0.distanceKm != nil }) else { throw AppServiceError.message("В части маршрутов пробег не заполнен. Откройте Инженер и проверьте отчёты.") }
                 return try finish("Учтённый пробег за период «\(period.title)»: \(n(records.reduce(0) { $0 + Double($1.distanceKm ?? 0) })) километров.")
             }
-            let summary = try await fuel()
+            let summary = try await fuel(currentBalance: information == .fuelDebt || information == .fuelBalance)
             let range = period.interval()
             let selected = summary.monthly.filter { month in
                 guard let date = parseDate(month.key + "-01") else { return false }
                 return date >= range.start && date < range.end
             }
             if information == .fuelDebt {
-                result = EngineerVoiceText.fuelDebt(rubles: summary.totals.carryoverDebtRub, estimatedLiters: summary.totals.carryoverDebtLiters)
-                    + " По всем учтённым записям: " + EngineerVoiceText.fuelBalance(liters: summary.totals.adjustedFuelDiff)
+                result = "Текущий топливный баланс: " + EngineerVoiceText.fuelBalance(liters: summary.totals.adjustedFuelDiff)
             } else if information == .fuelBalance {
                 guard [.currentMonth, .previousMonth, .currentYear].contains(period) else { throw AppServiceError.message("Для остатка по норме выберите месяц или год.") }
                 guard !selected.isEmpty else { return try finish("Данных ГСМ за период «\(period.title)» нет.") }

@@ -60,7 +60,7 @@ struct CompanyLookupSheet: View {
     private func loadCompany() async {
         state = .loading
         guard let authToken, !authToken.isEmpty else {
-            state = .failed("Для загрузки данных нужно войти в LumaWork.")
+            state = .failed("Для загрузки данных нужно войти в приложение «Инженер».")
             return
         }
 

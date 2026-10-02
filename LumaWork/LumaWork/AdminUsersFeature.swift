@@ -857,7 +857,7 @@ private struct AdminUpdateEmailSheet: View {
     @State private var selectedUserID: String
     @State private var version = AppBuildIdentity.version
     @State private var build = AppBuildIdentity.build
-    @State private var subject = "Вышло обновление LumaWork \(AppBuildIdentity.version)"
+    @State private var subject = "Вышло обновление приложения «Инженер» \(AppBuildIdentity.version)"
     @State private var message = "Что изменилось:\n\n• "
     @State private var showsMassConfirmation = false
 

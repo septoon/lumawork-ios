@@ -371,7 +371,7 @@ extension ClosedRequestsScreen {
     func exportClosedRequests() {
         do {
             let data = try XLSXArchiveExporter.makeClosedRequestsWorkbook(records: store.records)
-            exportFileName = "LumaWork-requests-\(Self.exportDateFormatter.string(from: Date())).xlsx"
+            exportFileName = "Инженер-requests-\(Self.exportDateFormatter.string(from: Date())).xlsx"
             exportDocument = XLSXExportDocument(data: data)
             isSpreadsheetExporterPresented = true
         } catch {

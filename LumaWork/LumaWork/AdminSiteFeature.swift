@@ -6,12 +6,12 @@ import SwiftUI
 struct AdminSiteSettings: Codable, Hashable {
     var isEnabled = true
     var unavailableMessage = "Сайт временно недоступен. Попробуйте позже."
-    var brandTitle = "LumaWork"
+    var brandTitle = "Инженер"
     var brandCaption = "Приложение «Инженер»"
     var statusText = "Источник обновлений доступен"
     var heroTitle = "Рабочие задачи"
     var heroAccent = "в одном приложении"
-    var heroDescription = "LumaWork объединяет заявки, маршруты, пробег, топливо, аналитику и рабочую базу знаний."
+    var heroDescription = "Инженер объединяет заявки, маршруты, пробег, топливо, аналитику и рабочую базу знаний."
     var minimumIOS = "26.2"
     var screenshotsTitle = "Приложение, созданное под ежедневную работу"
     var screenshotsCaption = "Светлый интерфейс, крупные элементы и быстрый доступ к основным разделам без лишних переходов."

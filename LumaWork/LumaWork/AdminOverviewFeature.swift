@@ -388,6 +388,13 @@ private struct AdminSystemHealthCard: View {
         system.isHealthy ? .green : AppTheme.dangerTint
     }
 
+    private var serviceTitle: String {
+        switch system.service.lowercased() {
+        case "", "lumawork-api", "lumawork api": "API приложения «Инженер»"
+        default: system.service
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
@@ -401,7 +408,7 @@ private struct AdminSystemHealthCard: View {
                     Text(system.isHealthy ? "Система работает" : "Требуется внимание")
                         .font(.title3.weight(.bold))
                         .foregroundStyle(AppTheme.ink)
-                    Text(system.service.isEmpty ? "LumaWork API" : system.service)
+                    Text(serviceTitle)
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.mutedTint)
                 }
@@ -639,7 +646,7 @@ private struct AdminOverviewDataStorageCard: View {
 
     var body: some View {
         AppSectionHeader(
-            title: "Данные LumaWork",
+            title: "Данные приложения «Инженер»",
             caption: "PostgreSQL, файлы, отчёты и резервные копии"
         )
         AppCard {

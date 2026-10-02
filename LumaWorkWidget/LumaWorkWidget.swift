@@ -36,7 +36,7 @@ struct LumaWorkSummaryWidget: Widget {
             LumaWorkWidgetView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("LumaWork")
+        .configurationDisplayName("Инженер")
         .description("Активные заявки и маршрут на сегодня.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }

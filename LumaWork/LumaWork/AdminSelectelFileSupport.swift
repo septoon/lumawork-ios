@@ -68,9 +68,9 @@ nonisolated struct AdminEngineerSource: Codable, Hashable, Sendable {
     var news: [AdminEngineerSourceNews]
 
     static let empty = AdminEngineerSource(
-        name: "LumaWork",
+        name: "Инженер",
         subtitle: "Обновления приложения Инженер",
-        description: "Источник обновлений LumaWork для SideStore.",
+        description: "Источник обновлений приложения «Инженер» для SideStore.",
         iconURL: "",
         website: "",
         apps: [.empty],
@@ -152,9 +152,9 @@ nonisolated struct AdminEngineerSourceApp: Codable, Identifiable, Hashable, Send
     static let empty = AdminEngineerSourceApp(
         name: "Инженер",
         bundleIdentifier: "septon.LumaWork",
-        developerName: "LumaWork",
+        developerName: "Инженер",
         subtitle: "Рабочее приложение инженера",
-        localizedDescription: "Рабочее приложение инженера LumaWork.",
+        localizedDescription: "Рабочее приложение «Инженер».",
         iconURL: "",
         tintColor: "#2474FF",
         category: "utilities",

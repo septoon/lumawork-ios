@@ -651,7 +651,7 @@ final class FTPBackgroundDownloadManager: NSObject {
 
     private static func httpErrorMessage(statusCode: Int, fileURL: URL) -> String {
         if statusCode == 401 || statusCode == 403 {
-            return "Сессия LumaWork или Wing FTP истекла. Войдите заново и повторите загрузку. HTTP \(statusCode)"
+            return "Сессия приложения «Инженер» или Wing FTP истекла. Войдите заново и повторите загрузку. HTTP \(statusCode)"
         }
         if let data = try? Data(contentsOf: fileURL),
            let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

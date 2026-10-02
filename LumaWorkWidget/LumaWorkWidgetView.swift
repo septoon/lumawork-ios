@@ -13,13 +13,13 @@ struct LumaWorkWidgetView: View {
                 WidgetMessageView(
                     systemImage: "arrow.clockwise",
                     title: "Нет данных",
-                    message: "Откройте LumaWork для обновления"
+                    message: "Откройте «Инженер» для обновления"
                 )
             case .signedOut:
                 WidgetMessageView(
                     systemImage: "person.crop.circle.badge.exclamationmark",
                     title: "Требуется вход",
-                    message: "Войдите в LumaWork"
+                    message: "Войдите в «Инженер»"
                 )
             case .empty(let snapshot):
                 emptyView(snapshot)

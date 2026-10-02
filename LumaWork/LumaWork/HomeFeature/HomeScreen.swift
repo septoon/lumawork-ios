@@ -1105,12 +1105,12 @@ private struct YandexRouteWebView: UIViewRepresentable {
           value: {
             getCurrentPosition: function(_success, error) {
               if (typeof error === 'function') {
-                error({ code: 1, message: 'Geolocation is disabled in LumaWork.' });
+                error({ code: 1, message: 'Геолокация отключена в приложении «Инженер».' });
               }
             },
             watchPosition: function(_success, error) {
               if (typeof error === 'function') {
-                error({ code: 1, message: 'Geolocation is disabled in LumaWork.' });
+                error({ code: 1, message: 'Геолокация отключена в приложении «Инженер».' });
               }
               return 0;
             },

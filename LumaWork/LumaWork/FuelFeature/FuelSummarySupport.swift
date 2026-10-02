@@ -263,6 +263,10 @@ struct FuelProjection: Equatable {
         allRecords = records.sorted { $0.date > $1.date }
     }
 
+    static func current(records: [FuelRecord] = []) -> FuelProjection {
+        FuelProjection(records: records.filter(FuelArchivePolicy.isCurrent))
+    }
+
     func months(for selectedYear: String?) -> [FuelSummaryMonth] {
         FuelSummaryCalculator.filteredMonths(from: summary, selectedYear: selectedYear)
     }
