@@ -5,7 +5,7 @@ nonisolated struct ClosedRequestPreparedSearchEntry: Sendable {
     let searchText: String
 }
 
-nonisolated struct ClosedRequestPreparedListItem: Identifiable, Sendable {
+nonisolated struct ClosedRequestPreparedListItem: Identifiable, Sendable, Equatable {
     let record: ClosedRequestRecord
     let date: Date?
     let requestType: String

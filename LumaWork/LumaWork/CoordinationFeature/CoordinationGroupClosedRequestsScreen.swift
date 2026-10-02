@@ -1,36 +1,25 @@
 import Foundation
 import SwiftUI
 
-private struct GroupClosedRequestItem: Identifiable {
-    let source: SimpleOneRequestRecord
-    let display: ClosedRequestPreparedListItem
-
-    var id: String { source.id }
-    var typeKey: String {
-        source.requestType.split(whereSeparator: \.isWhitespace).first
-            .map(String.init)?.lowercased() ?? ""
-    }
-}
-
-private struct GroupClosedRequestDay: Identifiable {
-    let id: String
-    let title: String
-    let caption: String
-    var items: [GroupClosedRequestItem]
+private struct GroupClosedRequestsFilterID: Hashable {
+    let revision: UInt64
+    let query: String
+    let excludedTypes: Data
+    let day: Date
 }
 
 struct CoordinationGroupClosedRequestsScreen: View {
     let simpleOneStore: SimpleOneRequestsStore
+    let store: CoordinationGroupClosedRequestsStore
     let lumaWorkAuthToken: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("CoordinationGroupClosedRequests.excludedTypes") private var excludedTypesData = Data()
-    @State private var items: [GroupClosedRequestItem] = []
-    @State private var totalCount: Int?
-    @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var searchText = ""
-    @State private var dayPositions: [String: CGFloat] = [:]
+    @State private var list = GroupClosedRequestsList()
+    @State private var referenceDate = Date()
+    @State private var visibleDayID: String?
     @State private var selectedRequest: SimpleOneRequestRecord?
     @State private var loadingRequestID: String?
 
@@ -38,52 +27,17 @@ struct CoordinationGroupClosedRequestsScreen: View {
         (try? JSONDecoder().decode(Set<String>.self, from: excludedTypesData)) ?? []
     }
 
-    private var availableTypes: [(key: String, title: String)] {
-        var titles: [String: String] = [:]
-        for item in items {
-            titles[item.typeKey] = item.display.requestType.isEmpty
-                ? "Тип не указан" : item.display.requestType
-        }
-        return titles.map { ($0.key, $0.value) }
-            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-    }
-
-    private var visibleItems: [GroupClosedRequestItem] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-        let calendar = Calendar.autoupdatingCurrent
-        let excluded = excludedTypes
-        return items.filter { item in
-            guard let date = item.display.date,
-                  calendar.isDateInToday(date) || calendar.isDateInYesterday(date),
-                  !excluded.contains(item.typeKey) else { return false }
-            return query.isEmpty || item.display.searchText.contains(query)
-        }
-    }
-
-    private var days: [GroupClosedRequestDay] {
-        var groups: [GroupClosedRequestDay] = []
-        for item in visibleItems {
-            if let last = groups.indices.last, groups[last].id == item.display.dayKey {
-                groups[last].items.append(item)
-            } else {
-                groups.append(GroupClosedRequestDay(
-                    id: item.display.dayKey,
-                    title: item.display.dayTitle,
-                    caption: item.display.dayCaption,
-                    items: [item]
-                ))
-            }
-        }
-        return groups
+    private var filterID: GroupClosedRequestsFilterID {
+        GroupClosedRequestsFilterID(
+            revision: store.itemsRevision,
+            query: searchText,
+            excludedTypes: excludedTypesData,
+            day: Calendar.autoupdatingCurrent.startOfDay(for: referenceDate)
+        )
     }
 
     private var visibleDay: GroupClosedRequestDay? {
-        let groups = days
-        guard let key = ClosedRequestDayTracking.visibleKey(
-            orderedKeys: groups.map(\.id), positions: dayPositions
-        ) else { return nil }
-        return groups.first { $0.id == key }
+        list.days.first { $0.id == visibleDayID } ?? list.days.first
     }
 
     private var selectedRequestIsPresented: Binding<Bool> {
@@ -95,13 +49,12 @@ struct CoordinationGroupClosedRequestsScreen: View {
 
     var body: some View {
         AppScreen(fixedTopContent: {
-            if simpleOneStore.isAuthorized, !days.isEmpty {
+            if simpleOneStore.isAuthorized, !list.days.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 12) {
-                        AppSectionHeader(
-                            title: "Закрытые заявки группы",
-                            caption: "\(visibleItems.count) из \(totalCount ?? items.count)"
-                        )
+                        Text("\(list.count) из \(store.totalCount ?? store.items.count)")
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.mutedTint)
                         Spacer(minLength: 4)
                         Label("Сегодня и вчера", systemImage: "calendar")
                             .font(.caption.weight(.semibold))
@@ -112,8 +65,6 @@ struct CoordinationGroupClosedRequestsScreen: View {
                     }
                     if let visibleDay {
                         ClosedRequestDayHeader(title: visibleDay.title, caption: visibleDay.caption)
-                            .id(visibleDay.id)
-                            .transition(.opacity)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -126,38 +77,38 @@ struct CoordinationGroupClosedRequestsScreen: View {
                     message: "Войдите в SimpleOne на экране «Заявки».",
                     systemName: "person.crop.circle.badge.exclamationmark"
                 )
-            } else if let errorMessage {
+            } else if let errorMessage = errorMessage ?? store.errorMessage {
                 AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
             }
-            if simpleOneStore.isAuthorized, isLoading {
+            if simpleOneStore.isAuthorized, store.isLoading {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text("Загружено \(items.count) из \(totalCount.map(String.init) ?? "…")")
+                    Text("Загружено \(store.loadedCount) из \(store.totalCount.map(String.init) ?? "…")")
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.mutedTint)
                 }
             }
             if !simpleOneStore.isAuthorized {
                 EmptyView()
-            } else if items.isEmpty, isLoading {
+            } else if store.items.isEmpty, store.isLoading {
                 AppLoadingView(title: "Загружаю закрытые заявки группы")
-            } else if visibleItems.isEmpty {
+            } else if list.days.isEmpty {
                 AppEmptyState(
                     title: "Заявок нет",
-                    message: items.isEmpty
+                    message: store.items.isEmpty
                         ? "SimpleOne не вернул закрытые заявки группы."
                         : "За сегодня и вчера нет заявок с выбранными типами.",
                     systemName: "checklist"
                 )
             } else {
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(days) { day in
+                    ForEach(list.days) { day in
                         LazyVStack(alignment: .leading, spacing: 16) {
-                            ForEach(Array(day.items.enumerated()), id: \.element.id) { _, item in
+                            ForEach(Array(day.items.enumerated()), id: \.element.id) { index, item in
                                 requestCard(item)
                                     .depthStackPrimary(
                                         reduceMotion: reduceMotion,
-                                        stage: visibleItems.firstIndex(where: { $0.id == item.id }) ?? 0
+                                        stage: day.startIndex + index
                                     )
                             }
                         }
@@ -167,17 +118,11 @@ struct CoordinationGroupClosedRequestsScreen: View {
                     }
                 }
                 .onPreferenceChange(ClosedRequestDayPositionKey.self) { positions in
-                    let keys = days.map(\.id)
-                    let previous = ClosedRequestDayTracking.visibleKey(
-                        orderedKeys: keys, positions: dayPositions
-                    )
                     let next = ClosedRequestDayTracking.visibleKey(
-                        orderedKeys: keys, positions: positions
+                        orderedKeys: list.days.map(\.id), positions: positions
                     )
-                    if previous == next {
-                        dayPositions = positions
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.2)) { dayPositions = positions }
+                    if visibleDayID != next {
+                        visibleDayID = next
                     }
                 }
             }
@@ -191,7 +136,7 @@ struct CoordinationGroupClosedRequestsScreen: View {
                     Button("Показать все") {
                         excludedTypesData = Data()
                     }
-                    ForEach(availableTypes, id: \.key) { type in
+                    ForEach(list.availableTypes, id: \.key) { type in
                         Button {
                             toggleType(type.key)
                         } label: {
@@ -207,13 +152,17 @@ struct CoordinationGroupClosedRequestsScreen: View {
                 .accessibilityLabel("Фильтр по типам заявок")
             }
         }
-        .refreshable { await load() }
+        .refreshable { await store.refresh(simpleOneStore: simpleOneStore) }
+        .task(id: filterID) { await rebuildList() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+            referenceDate = Date()
+        }
         .task(id: "\(simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: simpleOneStore))") {
             if simpleOneStore.isAuthorized {
-                await load()
+                await store.refresh(simpleOneStore: simpleOneStore)
             } else {
-                items = []
-                totalCount = nil
+                store.synchronizeSession(simpleOneStore: simpleOneStore)
+                list = GroupClosedRequestsList()
             }
         }
         .navigationDestination(isPresented: selectedRequestIsPresented) {
@@ -318,42 +267,16 @@ struct CoordinationGroupClosedRequestsScreen: View {
         }
     }
 
-    private func load() async {
-        guard simpleOneStore.isAuthorized, !isLoading else { return }
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        var page = 1
-        var collected: [GroupClosedRequestItem] = []
-        var seenIDs = Set<String>()
-        do {
-            while !Task.isCancelled {
-                let result = try await simpleOneStore.fetchGroupClosedRequestsPage(
-                    page: page, perPage: 100
-                )
-                guard !Task.isCancelled, simpleOneStore.isAuthorized else { return }
-                totalCount = result.totalCount ?? totalCount
-                let previousCount = collected.count
-                let newRecords = result.records.filter { seenIDs.insert($0.id).inserted }
-                collected.append(contentsOf: Self.prepare(newRecords))
-                items = collected.sorted {
-                    ($0.display.date ?? .distantPast) > ($1.display.date ?? .distantPast)
-                }
-                guard result.hasMore, collected.count > previousCount else { break }
-                page += 1
-            }
-        } catch is CancellationError {
-        } catch {
-            errorMessage = appUserFacingErrorMessage(error)
-        }
+    private func rebuildList() async {
+        let snapshot = store.items
+        let query = searchText
+        let excluded = excludedTypes
+        let now = referenceDate
+        let rebuilt = await Task.detached(priority: .userInitiated) {
+            GroupClosedRequestsList.build(items: snapshot, query: query, excludedTypes: excluded, now: now)
+        }.value
+        guard !Task.isCancelled, list != rebuilt else { return }
+        list = rebuilt
     }
 
-    private static func prepare(_ records: [SimpleOneRequestRecord]) -> [GroupClosedRequestItem] {
-        let displayRecords = records.map(ClosedRequestsStore.closedRequestRecord(from:))
-        let displays = ClosedRequestsIndexBuilder.build(records: displayRecords)
-        return zip(records, displays).map { GroupClosedRequestItem(source: $0, display: $1.item) }
-            .sorted { lhs, rhs in
-                (lhs.display.date ?? .distantPast) > (rhs.display.date ?? .distantPast)
-            }
-    }
 }

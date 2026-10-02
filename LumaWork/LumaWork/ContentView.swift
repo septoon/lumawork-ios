@@ -39,6 +39,7 @@ struct ContentView: View {
             feedbackStore: stores.feedbackStore,
             workDocumentsStore: stores.workDocumentsStore,
             navigationVisibilityStore: stores.navigationVisibilityStore,
+            groupClosedRequestsStore: stores.groupClosedRequestsStore,
             refreshHomeData: {
                 await addClosedRequestsToRoute()
             }
@@ -95,7 +96,13 @@ struct ContentView: View {
                 isAuthenticated: sessionStore.isAuthenticated
             )
         }
+        .task(id: "\(stores.simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: stores.simpleOneStore))") {
+            stores.groupClosedRequestsStore.synchronizeSession(simpleOneStore: stores.simpleOneStore)
+        }
         .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                stores.groupClosedRequestsStore.resumeIfNeeded(simpleOneStore: stores.simpleOneStore)
+            }
             guard newPhase == .background else { return }
             isAdminUnlocked = false
             WidgetSnapshotPublisher.publish(
@@ -192,7 +199,8 @@ struct ContentView: View {
             CoordinationScreen(
                 simpleOneStore: stores.simpleOneStore,
                 lumaWorkAuthToken: sessionStore.authToken,
-                store: stores.coordinationStore
+                store: stores.coordinationStore,
+                groupClosedRequestsStore: stores.groupClosedRequestsStore
             )
         case .timeReport:
             TimeReportScreen(

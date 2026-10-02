@@ -10,6 +10,41 @@ struct RouteSettingsScreen: View {
 
     var body: some View {
         AppScreen {
+            AppSectionHeader(title: "Карты")
+
+            AppCard {
+                ForEach(RouteMapsProvider.allCases) { provider in
+                    Button {
+                        AppHaptics.trigger()
+                        draft.mapsProvider = provider
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(provider.title)
+                                .foregroundStyle(AppTheme.ink)
+                            Spacer(minLength: 8)
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(AppTheme.primaryTint)
+                                .opacity(draft.mapsProvider == provider ? 1 : 0)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .frame(minHeight: 36)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(draft.mapsProvider == provider ? .isSelected : [])
+
+                    if provider != RouteMapsProvider.allCases.last {
+                        Divider()
+                    }
+                }
+
+                Text(draft.mapsProvider == .apple
+                    ? "Пробег рассчитывается автоматически и отправляется в отчёте за день."
+                    : "Введите пробег дня вручную перед отправкой отчёта.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.mutedTint)
+            }
+
             AppSectionHeader(title: "Адреса")
 
             AppCard {
@@ -50,16 +85,17 @@ struct RouteSettingsScreen: View {
     private func save() {
         Task {
             isSaving = true
-            var profile = sessionStore.userProfile
-            profile.routeWarehouseAddress = draft.warehouseAddress
-            profile.routeHomeAddress = draft.homeAddress
-
-            await sessionStore.saveProfile(profile)
-            if sessionStore.errorMessage == nil {
-                routeStore.updateRouteSettings(draft)
-                dismiss()
+            defer { isSaving = false }
+            let original = mergedSettings()
+            if original.warehouseAddress != draft.warehouseAddress || original.homeAddress != draft.homeAddress {
+                var profile = sessionStore.userProfile
+                profile.routeWarehouseAddress = draft.warehouseAddress
+                profile.routeHomeAddress = draft.homeAddress
+                await sessionStore.saveProfile(profile)
+                guard sessionStore.errorMessage == nil else { return }
             }
-            isSaving = false
+            routeStore.updateRouteSettings(draft)
+            dismiss()
         }
     }
 

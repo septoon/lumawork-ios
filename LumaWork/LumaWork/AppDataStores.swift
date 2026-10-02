@@ -24,6 +24,7 @@ final class AppDataStores {
     let employeesStore: SimpleOneEmployeesStore
     let workScheduleStore: WorkScheduleStore
     let coordinationStore: CoordinationStore
+    let groupClosedRequestsStore: CoordinationGroupClosedRequestsStore
     let adminUsersStore: AdminUsersStore
     let feedbackStore: FeedbackStore
     let workDocumentsStore: WorkDocumentsStore
@@ -104,6 +105,7 @@ final class AppDataStores {
         employeesStore = SimpleOneEmployeesStore(cacheID: userID)
         workScheduleStore = WorkScheduleStore(cacheID: userID)
         coordinationStore = CoordinationStore(cacheID: userID)
+        groupClosedRequestsStore = CoordinationGroupClosedRequestsStore(cacheID: userID)
         adminUsersStore = AdminUsersStore(token: authToken, cacheID: userID)
         feedbackStore = FeedbackStore(
             config: config,

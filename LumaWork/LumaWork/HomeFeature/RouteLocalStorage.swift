@@ -3,21 +3,25 @@ import Foundation
 struct RouteQueueItem: Codable, Hashable {
     var date: String
     var workType: RouteWorkType
+    var mapsProvider: RouteMapsProvider
 
-    init(date: String, workType: RouteWorkType = .pos) {
+    init(date: String, workType: RouteWorkType = .pos, mapsProvider: RouteMapsProvider = .yandex) {
         self.date = date
         self.workType = workType
+        self.mapsProvider = mapsProvider
     }
 
     private enum CodingKeys: String, CodingKey {
         case date
         case workType
+        case mapsProvider
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         date = try container.decode(String.self, forKey: .date)
         workType = try container.decodeIfPresent(RouteWorkType.self, forKey: .workType) ?? .pos
+        mapsProvider = try container.decodeIfPresent(RouteMapsProvider.self, forKey: .mapsProvider) ?? .yandex
     }
 }
 
@@ -27,13 +31,18 @@ final class RouteLocalStorage {
     private let settingsKey = "route.pwa.settings"
     private let periodStartOdometerKey = "route.pwa.period-start-odometers"
     private let dailyMileageKey = "route.pwa.daily-mileages"
-    private let defaults = UserDefaults.standard
+    private let appleMileageKey = "route.apple-map-mileages"
+    private let defaults: UserDefaults
     private var daysCache: [String: RouteDayRecord]?
     private var settingsCache: RouteSettings?
     private var queueCache: [RouteQueueItem]?
     private var periodStartOdometerCache: [String: Int]?
     private var dailyMileageCache: [String: Int]?
     private var pendingDaysSave: Task<Void, Never>?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     deinit {
         pendingDaysSave?.cancel()
@@ -175,10 +184,29 @@ final class RouteLocalStorage {
         saveDailyMileages(values)
     }
 
-    func enqueue(_ date: String, workType: RouteWorkType = .pos) {
+    func loadAppleMileage(for key: String) -> AppleRouteDistanceSnapshot? {
+        loadAppleMileages()[key]
+    }
+
+    func saveAppleMileage(_ value: AppleRouteDistanceSnapshot, for key: String) {
+        var all = loadAppleMileages()
+        all[key] = value
+        guard let data = try? JSONEncoder().encode(all) else { return }
+        defaults.set(data, forKey: appleMileageKey)
+    }
+
+    private func loadAppleMileages() -> [String: AppleRouteDistanceSnapshot] {
+        guard let data = defaults.data(forKey: appleMileageKey),
+              let decoded = try? JSONDecoder().decode([String: AppleRouteDistanceSnapshot].self, from: data) else {
+            return [:]
+        }
+        return decoded
+    }
+
+    func enqueue(_ date: String, workType: RouteWorkType = .pos, mapsProvider: RouteMapsProvider = .yandex) {
         var queue = loadQueue()
-        guard !queue.contains(where: { $0.date == date && $0.workType == workType }) else { return }
-        queue.append(RouteQueueItem(date: date, workType: workType))
+        queue.removeAll { $0.date == date && $0.workType == workType }
+        queue.append(RouteQueueItem(date: date, workType: workType, mapsProvider: mapsProvider))
         saveQueue(queue)
     }
 
@@ -359,7 +387,8 @@ final class RouteLocalStorage {
     static func migrateLegacyOfficeAddress(in settings: RouteSettings) -> RouteSettings {
         RouteSettings(
             warehouseAddress: migrateLegacyOfficeAddress(settings.warehouseAddress),
-            homeAddress: migrateLegacyOfficeAddress(settings.homeAddress, fallback: "")
+            homeAddress: migrateLegacyOfficeAddress(settings.homeAddress, fallback: ""),
+            mapsProvider: settings.mapsProvider
         )
     }
 

@@ -1,11 +1,12 @@
 import Foundation
 
 extension String {
+    nonisolated private static let routeCities = ["Алушта", "Ялта", "Севастополь", "Симферополь", "Джанкой"]
+
     nonisolated func normalizedAddressStartingFromAlushta() -> String {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        let cities = ["Алушта", "Ялта", "Севастополь", "Симферополь", "Джанкой"]
 
-        let firstMatchedRange = cities
+        let firstMatchedRange = Self.routeCities
             .compactMap { city in
                 trimmed.range(of: city, options: [.caseInsensitive])
             }
@@ -29,5 +30,12 @@ extension String {
                 with: ", ",
                 options: .regularExpression
             )
+    }
+
+    nonisolated func qualifiedRouteAddress() -> String {
+        let address = normalizedAddressCommaSpacing()
+        guard !address.isEmpty else { return address }
+        let hasExplicitCity = Self.routeCities.contains { address.localizedCaseInsensitiveContains($0) }
+        return hasExplicitCity ? address : "Алушта, \(address)"
     }
 }

@@ -207,6 +207,7 @@ struct AppSidebarShell<Content: View>: View {
     private let feedbackStore: FeedbackStore
     private let workDocumentsStore: WorkDocumentsStore
     private let navigationVisibilityStore: AppNavigationVisibilityStore
+    private let groupClosedRequestsStore: CoordinationGroupClosedRequestsStore
     private let refreshHomeData: () async -> Void
     private let content: Content
 
@@ -219,6 +220,7 @@ struct AppSidebarShell<Content: View>: View {
         feedbackStore: FeedbackStore,
         workDocumentsStore: WorkDocumentsStore,
         navigationVisibilityStore: AppNavigationVisibilityStore,
+        groupClosedRequestsStore: CoordinationGroupClosedRequestsStore,
         refreshHomeData: @escaping () async -> Void,
         @ViewBuilder content: () -> Content
     ) {
@@ -231,6 +233,7 @@ struct AppSidebarShell<Content: View>: View {
         self.feedbackStore = feedbackStore
         self.workDocumentsStore = workDocumentsStore
         self.navigationVisibilityStore = navigationVisibilityStore
+        self.groupClosedRequestsStore = groupClosedRequestsStore
         self.refreshHomeData = refreshHomeData
         self.content = content()
     }
@@ -253,6 +256,7 @@ struct AppSidebarShell<Content: View>: View {
                     feedbackStore: feedbackStore,
                     workDocumentsStore: workDocumentsStore,
                     navigationVisibilityStore: navigationVisibilityStore,
+                    groupClosedRequestsStore: groupClosedRequestsStore,
                     onRefresh: refreshHomeData
                 )
                 .frame(width: menuWidth)
@@ -558,6 +562,7 @@ private struct AppSidebarMenu: View {
     let feedbackStore: FeedbackStore
     let workDocumentsStore: WorkDocumentsStore
     let navigationVisibilityStore: AppNavigationVisibilityStore
+    let groupClosedRequestsStore: CoordinationGroupClosedRequestsStore
     let onRefresh: () async -> Void
     @State private var isSettingsPresented = false
     @State private var feedbackPresentation: FeedbackPresentation?
@@ -580,7 +585,8 @@ private struct AppSidebarMenu: View {
                             } label: {
                                 AppSidebarMenuRow(
                                     section: section,
-                                    isSelected: selectedSection == section
+                                    isSelected: selectedSection == section,
+                                    isLoadingGroupRequests: section == .coordination && groupClosedRequestsStore.isLoading
                                 )
                             }
                             .buttonStyle(.plain)
@@ -931,6 +937,7 @@ private struct AppSidebarFeedbackButton: View {
 private struct AppSidebarMenuRow: View {
     let section: AppNavigationSection
     let isSelected: Bool
+    let isLoadingGroupRequests: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -939,9 +946,22 @@ private struct AppSidebarMenuRow: View {
                 .foregroundStyle(isSelected ? AppSidebarChrome.primaryText : AppSidebarChrome.secondaryText)
                 .frame(width: 24, height: 24)
 
-            Text(section.title)
-                .font(.system(size: 18, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? AppSidebarChrome.primaryText : AppSidebarChrome.secondaryText)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(section.title)
+                    .font(.system(size: 18, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? AppSidebarChrome.primaryText : AppSidebarChrome.secondaryText)
+                if isLoadingGroupRequests {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(AppSidebarChrome.secondaryText)
+                        Text("Загрузка заявок группы")
+                            .font(.caption)
+                            .foregroundStyle(AppSidebarChrome.secondaryText)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
             Spacer(minLength: 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

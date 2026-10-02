@@ -244,9 +244,37 @@ struct RouteDayRecord: Codable, Hashable {
     }
 }
 
+nonisolated enum RouteMapsProvider: String, Codable, CaseIterable, Hashable, Identifiable, Sendable {
+    case yandex
+    case apple
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .yandex: "Яндекс Карты"
+        case .apple: "Apple Карты"
+        }
+    }
+
+    func reportDistanceKm(
+        manualKm: Int?, apple: AppleRouteDistanceSnapshot?, plan: AppleRoutePlan, isCalculating: Bool
+    ) -> Int? {
+        switch self {
+        case .yandex:
+            return manualKm
+        case .apple:
+            guard !isCalculating, plan.isComplete, let apple,
+                  apple.addresses == plan.addresses, apple.distanceKm >= 0 else { return nil }
+            return apple.distanceKm
+        }
+    }
+}
+
 nonisolated struct RouteSettings: Codable, Hashable, Sendable {
     var warehouseAddress: String
     var homeAddress: String
+    var mapsProvider: RouteMapsProvider
 
     static let legacyOfficeAddress = "ул. Снежковой 17Б"
     static let officeAddress = "Алушта, ул. В. Хромых, 11"
@@ -264,9 +292,10 @@ nonisolated struct RouteSettings: Codable, Hashable, Sendable {
         address(for: .warehouse)
     }
 
-    init(warehouseAddress: String, homeAddress: String) {
+    init(warehouseAddress: String, homeAddress: String, mapsProvider: RouteMapsProvider = .yandex) {
         self.warehouseAddress = warehouseAddress
         self.homeAddress = homeAddress
+        self.mapsProvider = mapsProvider
     }
 
     func address(for endpoint: RouteEndpointKind) -> String {
@@ -284,6 +313,7 @@ nonisolated struct RouteSettings: Codable, Hashable, Sendable {
         case homeAddress
         case startAddress
         case endAddress
+        case mapsProvider
     }
 
     init(from decoder: Decoder) throws {
@@ -301,6 +331,7 @@ nonisolated struct RouteSettings: Codable, Hashable, Sendable {
 
         self.warehouseAddress = warehouse.isEmpty ? Self.officeAddress : warehouse
         self.homeAddress = home
+        self.mapsProvider = try container.decodeIfPresent(RouteMapsProvider.self, forKey: .mapsProvider) ?? .yandex
     }
 
     func encode(to encoder: Encoder) throws {
@@ -309,6 +340,7 @@ nonisolated struct RouteSettings: Codable, Hashable, Sendable {
         try container.encode(homeAddress, forKey: .homeAddress)
         try container.encode(startAddress, forKey: .startAddress)
         try container.encode(endAddress, forKey: .endAddress)
+        try container.encode(mapsProvider, forKey: .mapsProvider)
     }
 }
 

@@ -42,11 +42,10 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		B5B0000F2F90000100B0000F /* Exceptions for LumaWorkWidget folder in LumaWorkWidgetExtension target */ = {
+		B5B0000F2F90000100B0000F /* Exceptions for "../LumaWorkWidget" folder in "LumaWorkWidgetExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				LumaWorkWidget.entitlements,
 			);
 			target = B5B000082F90000100B00008 /* LumaWorkWidgetExtension */;
 		};
@@ -58,15 +57,15 @@
 			path = LumaWork;
 			sourceTree = "<group>";
 		};
-		B5B000012F90000100B00001 /* LumaWorkShared */ = {
+		B5B000012F90000100B00001 /* ../LumaWorkShared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ../LumaWorkShared;
 			sourceTree = "<group>";
 		};
-		B5B000022F90000100B00002 /* LumaWorkWidget */ = {
+		B5B000022F90000100B00002 /* ../LumaWorkWidget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				B5B0000F2F90000100B0000F /* Exceptions for LumaWorkWidget folder in LumaWorkWidgetExtension target */,
+				B5B0000F2F90000100B0000F /* Exceptions for "../LumaWorkWidget" folder in "LumaWorkWidgetExtension" target */,
 			);
 			path = ../LumaWorkWidget;
 			sourceTree = "<group>";
@@ -96,8 +95,8 @@
 			isa = PBXGroup;
 			children = (
 				B5170B3D2F86DA8500A9C221 /* LumaWork */,
-				B5B000012F90000100B00001 /* LumaWorkShared */,
-				B5B000022F90000100B00002 /* LumaWorkWidget */,
+				B5B000012F90000100B00001 /* ../LumaWorkShared */,
+				B5B000022F90000100B00002 /* ../LumaWorkWidget */,
 				B5A7C9012F89C0000010AA01 /* ../Secrets.xcconfig */,
 				B5170B3C2F86DA8500A9C221 /* Products */,
 			);
@@ -131,7 +130,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				B5170B3D2F86DA8500A9C221 /* LumaWork */,
-				B5B000012F90000100B00001 /* LumaWorkShared */,
+				B5B000012F90000100B00001 /* ../LumaWorkShared */,
 			);
 			name = LumaWork;
 			packageProductDependencies = (
@@ -154,8 +153,8 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				B5B000022F90000100B00002 /* LumaWorkWidget */,
-				B5B000012F90000100B00001 /* LumaWorkShared */,
+				B5B000012F90000100B00001 /* ../LumaWorkShared */,
+				B5B000022F90000100B00002 /* ../LumaWorkWidget */,
 			);
 			name = LumaWorkWidgetExtension;
 			packageProductDependencies = (

@@ -131,6 +131,11 @@ struct HomeSkeletonView: View {
 
                 skeletonDivider
 
+                SkeletonPlaceholder(cornerRadius: 5)
+                    .frame(width: 230, height: 19)
+
+                skeletonDivider
+
                 HStack(spacing: HomeLayout.odometerSpacing) {
                     SkeletonPlaceholder(cornerRadius: 17)
                         .frame(width: 34, height: 34)

@@ -28,6 +28,7 @@ struct HomeScreen: View {
     @State private var stopEditorSelection: RouteStopEditorSelection?
     @State private var draggedStopID: String?
     @State private var yandexRoute: YandexRouteDestination?
+    @State private var appleRoute: AppleRouteMapDestination?
     @State private var routesArchiveStore: RouteArchiveStore
     @State private var selectedActiveRequest: SimpleOneRequestRecord?
     @State private var unavailableSendFeedbackTrigger = 0
@@ -222,6 +223,9 @@ struct HomeScreen: View {
         .fullScreenCover(item: $yandexRoute) { destination in
             YandexRouteBrowser(url: destination.url)
         }
+        .fullScreenCover(item: $appleRoute) { destination in
+            AppleRouteMapScreen(snapshot: destination.snapshot)
+        }
         .alert("Отправить отчёт?", isPresented: $sendConfirmationPresented) {
             Button("Отправить") {
                 dismissKeyboard()
@@ -345,7 +349,14 @@ struct HomeScreen: View {
                 Divider()
                     .overlay(AppTheme.border)
 
-                mileageRow
+                if !routeStore.usesAppleMaps {
+                    mileageRow
+
+                    Divider()
+                        .overlay(AppTheme.border)
+                }
+
+                appleMileageRow
 
                 Divider()
                     .overlay(AppTheme.border)
@@ -412,13 +423,87 @@ struct HomeScreen: View {
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.mutedTint)
 
-            Button("Составить маршрут", systemImage: "map.fill") {
+            Button {
                 openYandexRoute()
+            } label: {
+                Image("YandexMapsIcon")
+                    .renderingMode(.original)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 40, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
-            .labelStyle(.iconOnly)
-            .appNativeIconControl(.inline)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Составить маршрут")
             .accessibilityHint("Открывает маршрут в Яндекс.Картах")
         }
+    }
+
+    private var appleMileageRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: HomeLayout.mileageSpacing) {
+                Text(appleMileageText)
+                    .overlay {
+                        if routeStore.isCalculatingAppleDistance {
+                            SkeletonPlaceholder()
+                                .mask(Text(appleMileageText))
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .monospacedDigit()
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.mutedTint)
+                    .accessibilityLabel("Пробег через Apple Maps")
+                    .accessibilityValue(routeStore.isCalculatingAppleDistance
+                        ? "Пересчитывается"
+                        : routeStore.appleDistanceKm.map { "\($0) километров" } ?? "Недоступен")
+
+                Spacer(minLength: 0)
+
+                Button(action: openAppleRoute) {
+                    Image("AppleMapsIcon")
+                        .renderingMode(.original)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 40, height: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .opacity(routeStore.canOpenAppleRouteMap ? 1 : 0.45)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!routeStore.canOpenAppleRouteMap)
+                .accessibilityLabel("Маршрут Apple Maps")
+                .accessibilityHint("Открывает полноэкранную карту маршрута")
+            }
+
+            if let error = routeStore.appleDistanceError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.mutedTint)
+
+                Button("Повторить расчёт") {
+                    routeStore.refreshAppleDistance(force: true)
+                }
+                .font(.caption.weight(.semibold))
+                .tint(AppTheme.primaryTint)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var appleMileageText: String {
+        let value = routeStore.appleDistanceKm.map { "\($0) км" }
+            ?? (routeStore.isCalculatingAppleDistance ? "…" : "—")
+        return "Пробег через Apple Maps: \(value)"
+    }
+
+    private func openAppleRoute() {
+        guard routeStore.canOpenAppleRouteMap, let snapshot = routeStore.appleRouteSnapshot else { return }
+        AppHaptics.trigger()
+        appleRoute = AppleRouteMapDestination(snapshot: snapshot)
     }
 
     private var routesArchiveRow: some View {
@@ -915,6 +1000,14 @@ private struct YandexRouteBrowser: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         ModalCloseButton(action: dismiss.callAsFunction)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        ShareLink(item: url) {
+                            Label("Поделиться маршрутом", systemImage: "square.and.arrow.up")
+                        }
+                        .labelStyle(.iconOnly)
+                        .tint(AppTheme.primaryTint)
+                        .accessibilityHint("Открывает меню отправки ссылки маршрута")
                     }
                 }
         }

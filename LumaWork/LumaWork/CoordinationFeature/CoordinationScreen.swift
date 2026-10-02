@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CoordinationScreen: View {
     let simpleOneStore: SimpleOneRequestsStore
+    let groupClosedRequestsStore: CoordinationGroupClosedRequestsStore
     let lumaWorkAuthToken: String?
 
     @State private var store: CoordinationStore
@@ -13,9 +14,11 @@ struct CoordinationScreen: View {
     init(
         simpleOneStore: SimpleOneRequestsStore,
         lumaWorkAuthToken: String? = nil,
-        store: CoordinationStore
+        store: CoordinationStore,
+        groupClosedRequestsStore: CoordinationGroupClosedRequestsStore
     ) {
         self.simpleOneStore = simpleOneStore
+        self.groupClosedRequestsStore = groupClosedRequestsStore
         self.lumaWorkAuthToken = lumaWorkAuthToken
         _store = State(initialValue: store)
     }
@@ -122,6 +125,7 @@ struct CoordinationScreen: View {
                 NavigationLink {
                     CoordinationGroupClosedRequestsScreen(
                         simpleOneStore: simpleOneStore,
+                        store: groupClosedRequestsStore,
                         lumaWorkAuthToken: lumaWorkAuthToken
                     )
                 } label: {

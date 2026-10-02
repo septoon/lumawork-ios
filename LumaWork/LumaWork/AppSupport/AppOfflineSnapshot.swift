@@ -1,12 +1,12 @@
 import Foundation
 import OSLog
 
-struct AppOfflineSnapshot<Value: Codable>: Codable {
+nonisolated struct AppOfflineSnapshot<Value: Codable>: Codable {
     let updatedAt: Date
     let value: Value
 }
 
-enum AppOfflineSnapshotStore {
+nonisolated enum AppOfflineSnapshotStore {
     private struct SnapshotMetadata: Decodable {
         let updatedAt: Date
     }

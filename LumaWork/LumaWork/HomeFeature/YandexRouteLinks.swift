@@ -1,14 +1,6 @@
 import Foundation
 
 nonisolated enum YandexRouteLinks {
-    private static let defaultCity = "Алушта"
-    private static let explicitCities = [
-        "Алушта",
-        "Ялта",
-        "Севастополь",
-        "Симферополь",
-        "Джанкой"
-    ]
     private static let badRoadAvoidance = "unpaved,poor_condition"
 
     static func webURL(baseURL: String?, addresses: [String]) -> URL? {
@@ -26,16 +18,9 @@ nonisolated enum YandexRouteLinks {
         let points = addresses
             .map { $0.normalizedAddressCommaSpacing() }
             .filter { !$0.isEmpty }
-            .map(qualifyCityIfNeeded)
+            .map { $0.qualifiedRouteAddress() }
 
         return points.count >= 2 ? points : nil
-    }
-
-    private static func qualifyCityIfNeeded(_ address: String) -> String {
-        let hasExplicitCity = explicitCities.contains { city in
-            address.localizedCaseInsensitiveContains(city)
-        }
-        return hasExplicitCity ? address : "\(defaultCity), \(address)"
     }
 
     private static func routeQueryItems(routePoints: [String]) -> [URLQueryItem] {

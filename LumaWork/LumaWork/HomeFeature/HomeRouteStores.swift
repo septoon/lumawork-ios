@@ -16,10 +16,21 @@ struct RouteMonthlyMileage: Hashable {
     private let storage = RouteLocalStorage()
     private var hasLoaded = false
     private let reportStartDate = "2026-04-01"
+    private let appleDistanceCalculator = AppleRouteDistanceCalculator()
+    private var appleDistanceTask: Task<Void, Never>?
+    private var appleDistanceRevision = UUID()
+    private var appleDistanceInput: AppleDistanceInput?
+
+    private struct AppleDistanceInput: Equatable {
+        let key: String
+        let plan: AppleRoutePlan
+    }
 
     var selectedDate = Date()
     var workType: RouteWorkType = .pos
-    var record: RouteDayRecord
+    var record: RouteDayRecord {
+        didSet { refreshAppleDistance() }
+    }
     var addressOptions: [String] = []
     private(set) var officeAddresses: [String] = []
     private(set) var isLoadingOfficeAddresses = false
@@ -30,6 +41,10 @@ struct RouteMonthlyMileage: Hashable {
     var routeSettings: RouteSettings
     private(set) var dailyMileageByDate: [String: Int] = [:]
     private(set) var isMileageHistoryReady = false
+    private(set) var appleRouteSnapshot: AppleRouteDistanceSnapshot?
+    var appleDistanceKm: Int? { appleRouteSnapshot?.distanceKm }
+    private(set) var isCalculatingAppleDistance = false
+    private(set) var appleDistanceError: String?
 
     init(service: RouteDayService) {
         self.service = service
@@ -38,6 +53,58 @@ struct RouteMonthlyMileage: Hashable {
         self.record = storage.loadDay(todayKey, workType: .pos)
         self.dailyMileageByDate = storage.loadDailyMileageByDate()
         refreshAddressOptions()
+        refreshAppleDistance()
+    }
+
+    func refreshAppleDistance(force: Bool = false) {
+        let input = AppleDistanceInput(
+            key: record.workType.storageKey(for: record.date),
+            plan: AppleRoutePlan(addresses: record.stops.map(\.address))
+        )
+        guard force || input != appleDistanceInput else { return }
+        appleDistanceInput = input
+        appleDistanceTask?.cancel()
+        let revision = UUID()
+        appleDistanceRevision = revision
+        appleDistanceError = nil
+        appleRouteSnapshot = nil
+        isCalculatingAppleDistance = false
+
+        guard !input.plan.isEmpty else {
+            appleRouteSnapshot = AppleRouteDistanceSnapshot(addresses: input.plan.addresses, distanceKm: 0)
+            return
+        }
+        guard input.plan.isComplete else {
+            appleDistanceError = AppleRouteDistanceError.incompleteRoute.localizedDescription
+            return
+        }
+        if !force, let cached = storage.loadAppleMileage(for: input.key),
+           cached.addresses == input.plan.addresses, cached.hasGeometry {
+            appleRouteSnapshot = cached
+            return
+        }
+
+        isCalculatingAppleDistance = true
+        let calculator = appleDistanceCalculator
+        appleDistanceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+                let snapshot = try await calculator.route(for: input.plan)
+                try Task.checkCancellation()
+                guard let self, self.appleDistanceRevision == revision else { return }
+                self.appleRouteSnapshot = snapshot
+                self.isCalculatingAppleDistance = false
+                self.storage.saveAppleMileage(
+                    snapshot,
+                    for: input.key
+                )
+            } catch {
+                guard !Task.isCancelled, let self, self.appleDistanceRevision == revision else { return }
+                self.isCalculatingAppleDistance = false
+                self.appleDistanceError = (error as? AppleRouteDistanceError)?.localizedDescription
+                    ?? "Не удалось рассчитать пробег через Apple Maps. Проверьте подключение и повторите."
+            }
+        }
     }
 
     var selectedDateKey: String {
@@ -71,8 +138,30 @@ struct RouteMonthlyMileage: Hashable {
 
     var canSendCurrentRecord: Bool {
         Self.hasDataToSend(record) &&
-            validateReportFields(record) == nil &&
+            (!usesAppleMaps || reportDistanceKm != nil) &&
+            validateReportFields(reportRecord) == nil &&
             !isSending
+    }
+
+    var usesAppleMaps: Bool { routeSettings.mapsProvider == .apple }
+
+    var reportDistanceKm: Int? {
+        routeSettings.mapsProvider.reportDistanceKm(
+            manualKm: record.distanceKm,
+            apple: appleRouteSnapshot,
+            plan: AppleRoutePlan(addresses: record.stops.map(\.address)),
+            isCalculating: isCalculatingAppleDistance
+        )
+    }
+
+    private var reportRecord: RouteDayRecord {
+        var report = record
+        report.distanceKm = reportDistanceKm
+        return report
+    }
+
+    var canOpenAppleRouteMap: Bool {
+        !isCalculatingAppleDistance && appleRouteSnapshot?.hasGeometry == true
     }
 
     var hasCurrentRouteData: Bool {
@@ -600,13 +689,27 @@ struct RouteMonthlyMileage: Hashable {
             return false
         }
 
-        if let validationError = validateReportFields(record) {
+        let mapsProvider = routeSettings.mapsProvider
+        if usesAppleMaps, reportDistanceKm == nil {
+            errorMessage = isCalculatingAppleDistance
+                ? "Дождитесь расчёта пробега через Apple Maps."
+                : appleDistanceError ?? "Рассчитайте пробег через Apple Maps перед отправкой."
+            return false
+        }
+
+        let currentRecord = reportRecord
+        if let validationError = validateReportFields(currentRecord) {
             errorMessage = validationError
             return false
         }
 
-        let currentRecord = record
         let dateKey = selectedDateKey
+        // Persist the selected mileage before sending so queued reports and the archive use it too.
+        record = currentRecord
+        persistCurrentRecord()
+        if let distanceKm = currentRecord.distanceKm {
+            dailyMileageByDate[currentRecord.workType.storageKey(for: dateKey)] = distanceKm
+        }
 
         isSending = true
         defer { isSending = false }
@@ -620,7 +723,7 @@ struct RouteMonthlyMileage: Hashable {
             return false
         } catch let error as RouteDayServiceError {
             if error.shouldQueue {
-                storage.enqueue(dateKey, workType: currentRecord.workType)
+                storage.enqueue(dateKey, workType: currentRecord.workType, mapsProvider: mapsProvider)
                 AppErrorPresentation.presentIfNeeded(
                     message: error.errorDescription ?? AppNetworkBannerKind.cannotConnectToServer.message
                 )
@@ -701,11 +804,27 @@ struct RouteMonthlyMileage: Hashable {
         guard !queue.isEmpty else { return }
 
         for item in queue {
-            let day = storage.loadDay(item.date, workType: item.workType)
+            var day = storage.loadDay(item.date, workType: item.workType)
             guard Self.hasDataToSend(day) else {
                 storage.dequeue(item.date, workType: item.workType)
                 continue
             }
+
+            if item.mapsProvider == .apple {
+                let key = item.workType.storageKey(for: item.date)
+                guard let distanceKm = item.mapsProvider.reportDistanceKm(
+                    manualKm: day.distanceKm,
+                    apple: storage.loadAppleMileage(for: key),
+                    plan: AppleRoutePlan(addresses: day.stops.map(\.address)),
+                    isCalculating: false
+                ) else { continue }
+                day.distanceKm = distanceKm
+                storage.saveDay(day)
+                if record.date == day.date, record.workType == day.workType, record.stops == day.stops {
+                    record.distanceKm = distanceKm
+                }
+            }
+            guard validateReportFields(day) == nil else { continue }
 
             do {
                 try await service.sendDay(day, date: item.date)
