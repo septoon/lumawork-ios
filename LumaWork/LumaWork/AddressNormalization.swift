@@ -38,4 +38,33 @@ extension String {
         let hasExplicitCity = Self.routeCities.contains { address.localizedCaseInsensitiveContains($0) }
         return hasExplicitCity ? address : "Алушта, \(address)"
     }
+
+    nonisolated func qualifiedAppleRouteAddress() -> String {
+        // Apple can resolve "ул Набережная, д 9" to the street and discard the house.
+        let address = qualifiedRouteAddress()
+            .replacingOccurrences(
+                of: "(^|[,\\s])ул(?:\\.\\s*|\\s+)",
+                with: "$1улица ",
+                options: [.regularExpression, .caseInsensitive]
+            )
+            .replacingOccurrences(
+                of: "(^|[,\\s])(?:дом|д\\.?)\\s*(?=\\d)",
+                with: "$1",
+                options: [.regularExpression, .caseInsensitive]
+            )
+            .normalizedAddressCommaSpacing()
+
+        var parts = address.components(separatedBy: ", ")
+        guard parts.count == 3, parts[2].first?.isNumber == true else { return address }
+        let streetWords = parts[1].lowercased(with: Locale(identifier: "ru_RU"))
+            .split { $0.isWhitespace || $0 == "." }
+        let streetTypes = ["улица", "проспект", "пр-т", "пр-кт", "переулок", "пер",
+                           "шоссе", "ш", "площадь", "пл", "проезд", "пр-д", "бульвар", "б-р",
+                           "тупик", "аллея", "наб"]
+        let hasStreetType = streetWords.contains { streetTypes.contains(String($0)) }
+            || (streetWords.count > 1 && streetWords.contains("набережная"))
+        guard !hasStreetType else { return address }
+        parts[1] = "улица \(parts[1])"
+        return parts.joined(separator: ", ")
+    }
 }

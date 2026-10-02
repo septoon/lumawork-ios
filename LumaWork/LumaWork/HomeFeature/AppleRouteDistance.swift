@@ -78,10 +78,13 @@ nonisolated struct AppleRouteLeg: Codable, Sendable {
 }
 
 nonisolated struct AppleRouteDistanceSnapshot: Codable, Sendable {
+    static let currentGeocodingVersion = 2
+
     let addresses: [String]
     let distanceKm: Int
     var stopCoordinates: [AppleRouteCoordinate]? = nil
     var legs: [AppleRouteLeg]? = nil
+    var geocodingVersion: Int? = currentGeocodingVersion
 
     var hasGeometry: Bool {
         stopCoordinates?.count == addresses.count && legs != nil
@@ -161,7 +164,7 @@ final class AppleRouteDistanceCalculator {
     private func mapItem(for address: String) async throws -> MKMapItem {
         if let cached = mapItems[address] { return cached }
         try Task.checkCancellation()
-        guard let request = MKGeocodingRequest(addressString: address.qualifiedRouteAddress()) else {
+        guard let request = MKGeocodingRequest(addressString: address.qualifiedAppleRouteAddress()) else {
             throw AppleRouteDistanceError.addressNotFound(address)
         }
         request.preferredLocale = Locale(identifier: "ru_RU")

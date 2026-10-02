@@ -35,7 +35,7 @@ final class ClosedRequestsStore {
         UserDefaults.standard.set(true, forKey: merchantTINRepairStorageKey)
     }
 
-    var deletionDateRange: ClosedRange<Date>? {
+    nonisolated static func deletionDateRange(in records: [ClosedRequestRecord]) -> ClosedRange<Date>? {
         let dates = records.compactMap(Self.deletionDate(for:))
         guard let earliestDate = dates.min(), let latestDate = dates.max() else {
             return nil

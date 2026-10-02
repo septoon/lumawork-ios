@@ -49,8 +49,9 @@ struct ClosedRequestsScreen: View {
     @State var isDeleteAllConfirmationPresented = false
     @State var closedDateRange: ClosedRange<Date>?
     @State var automaticClosedDateRange: ClosedRange<Date>?
+    @State var closedDeletionDateRange: ClosedRange<Date>?
     @State var closedDateRangeSelection: ClosedRequestsDateRangeSelection?
-    @State var closedDayPositions: [String: CGFloat] = [:]
+    @State var visibleClosedDayID: String?
 
     let pageSize = 30
 
@@ -459,14 +460,14 @@ private extension ClosedRequestsScreen {
 
             Button {
                 AppHaptics.trigger()
-                if let range = store.deletionDateRange {
+                if let range = closedDeletionDateRange {
                     cleanupRangeSelection = LocalArchiveCleanupRange(bounds: range)
                 }
             } label: {
                 Label("Удалить за период…", systemImage: "calendar.badge.minus")
             }
             .disabled(
-                store.deletionDateRange == nil
+                closedDeletionDateRange == nil
                     || store.isLoadingSnapshot
                     || store.isDeleting
                     || isRefreshingClosedRequestsArchive
@@ -625,19 +626,12 @@ private extension ClosedRequestsScreen {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .onPreferenceChange(ClosedRequestDayPositionKey.self) { positions in
-                    let keys = paginatedDayGroups.map(\.id)
-                    let previous = ClosedRequestDayTracking.visibleKey(
-                        orderedKeys: keys, positions: closedDayPositions
-                    )
                     let next = ClosedRequestDayTracking.visibleKey(
-                        orderedKeys: keys, positions: positions
+                        orderedKeys: paginatedDayGroups.map(\.id), positions: positions
                     )
-                    if previous == next {
-                        closedDayPositions = positions
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            closedDayPositions = positions
-                        }
+                    guard visibleClosedDayID != next else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        visibleClosedDayID = next
                     }
                 }
 
@@ -658,11 +652,7 @@ private extension ClosedRequestsScreen {
 
     var visibleClosedDay: ClosedRequestDayGroup? {
         let groups = paginatedDayGroups
-        guard let key = ClosedRequestDayTracking.visibleKey(
-            orderedKeys: groups.map(\.id),
-            positions: closedDayPositions
-        ) else { return nil }
-        return groups.first { $0.id == key }
+        return groups.first { $0.id == visibleClosedDayID } ?? groups.first
     }
 
     var closedRequestsEmptyTitle: String {

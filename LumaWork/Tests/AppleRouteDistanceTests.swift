@@ -27,6 +27,30 @@ struct AppleRouteDistanceTests {
 
         expect("Хромых,11".qualifiedRouteAddress() == "Алушта, Хромых, 11", "short address keeps route city")
         expect("Ялта,Ленина,1".qualifiedRouteAddress() == "Ялта, Ленина, 1", "explicit city is preserved")
+        expect("Алушта, ул Набережная, д 9".qualifiedAppleRouteAddress() == "Алушта, улица Набережная, 9",
+               "Apple query retains a recognizable house number instead of resolving the entire street")
+        expect("Набережная улица, 9".qualifiedAppleRouteAddress() == "Алушта, Набережная улица, 9",
+               "Apple query preserves an already complete street address")
+        expect("Ялта, ул. Ленина, д. 1".qualifiedAppleRouteAddress() == "Ялта, улица Ленина, 1",
+               "Apple query preserves the explicit city")
+        expect("Алушта, ул Горького, д 6-в".qualifiedAppleRouteAddress() == "Алушта, улица Горького, 6-в",
+               "Apple query preserves the building suffix")
+        expect("Алушта, ул Партизанская, д 5б".qualifiedAppleRouteAddress() == "Алушта, улица Партизанская, 5б",
+               "Apple query preserves a building letter without a separator")
+        expect("Алушта, ул. В. Хромых, 11".qualifiedAppleRouteAddress() == "Алушта, улица В. Хромых, 11",
+               "Apple query preserves initials in a street name")
+        expect("Алушта, Набережная, 25".qualifiedAppleRouteAddress() == "Алушта, улица Набережная, 25",
+               "bare street name must not resolve to the Satera road")
+        expect("Хромых,11".qualifiedAppleRouteAddress() == "Алушта, улица Хромых, 11",
+               "short route address gains the city and street type")
+        expect("Ялта, Ленина, 1".qualifiedAppleRouteAddress() == "Ялта, улица Ленина, 1",
+               "bare street name keeps the explicit city")
+        expect("Алушта, Советский переулок, 3".qualifiedAppleRouteAddress() == "Алушта, Советский переулок, 3",
+               "an explicit lane must not become a street")
+        expect("Алушта, пр-т Ленина, 1".qualifiedAppleRouteAddress() == "Алушта, пр-т Ленина, 1",
+               "an explicit avenue abbreviation must not become a street")
+        expect("Алушта, набережная Ленина, 1".qualifiedAppleRouteAddress() == "Алушта, набережная Ленина, 1",
+               "a named embankment must keep its type")
         let emptyTotal = try await AppleRoutePlan(addresses: ["Склад", "", "Склад"]).distanceKm { _, _ in
             fatalError("Empty day must not request directions")
         }
@@ -100,6 +124,18 @@ struct AppleRouteDistanceTests {
         expect(storage.loadQueue().count == 1, "resending the same day updates its queue item")
         let restoredStorage = RouteLocalStorage(defaults: defaults)
         expect(restoredStorage.loadQueue().first?.mapsProvider == .apple, "queue retains Apple source even after switching settings")
+        let oldGeometryCache = """
+        {"2026-10-01":{"addresses":["Склад","A","Склад"],"distanceKm":22,"geocodingVersion":1,
+        "stopCoordinates":[{"latitude":44.67,"longitude":34.41},
+        {"latitude":44.67,"longitude":34.41},{"latitude":44.67,"longitude":34.41}],"legs":[]}}
+        """
+        defaults.set(Data(oldGeometryCache.utf8), forKey: "route.apple-map-mileages")
+        expect(storage.loadAppleMileage(for: "2026-10-01") == nil,
+               "old geocoding cache must not supply wrong coordinates or queued report mileage")
+        defaults.set(Data(oldGeometryCache.replacingOccurrences(of: ",\"geocodingVersion\":1", with: "").utf8),
+                     forKey: "route.apple-map-mileages")
+        expect(storage.loadAppleMileage(for: "2026-10-01") == nil,
+               "unversioned geocoding cache must also be recalculated")
         storage.saveAppleMileage(snapshot, for: "2026-10-02")
         let restoredSnapshot = restoredStorage.loadAppleMileage(for: "2026-10-02")
         expect(restoredSnapshot?.distanceKm == 52, "Apple mileage survives restart independently of manual mileage")

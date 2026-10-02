@@ -126,12 +126,14 @@ extension ClosedRequestsScreen {
             let defaultRange = ClosedRequestsFilterSupport.defaultRange(
                 availableDates: entries.compactMap(\.item.date)
             )
-            return (entries, defaultRange)
+            let deletionRange = ClosedRequestsStore.deletionDateRange(in: records)
+            return (entries, defaultRange, deletionRange)
         }.value
         guard !Task.isCancelled else { return }
         closedRequestsCache = records
         searchEntries = prepared.0
         automaticClosedDateRange = prepared.1
+        closedDeletionDateRange = prepared.2
         currentPage = 1
         refreshFilteredRecords()
     }

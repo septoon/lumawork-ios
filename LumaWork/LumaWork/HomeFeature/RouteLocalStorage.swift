@@ -185,7 +185,9 @@ final class RouteLocalStorage {
     }
 
     func loadAppleMileage(for key: String) -> AppleRouteDistanceSnapshot? {
-        loadAppleMileages()[key]
+        guard let snapshot = loadAppleMileages()[key],
+              snapshot.geocodingVersion == AppleRouteDistanceSnapshot.currentGeocodingVersion else { return nil }
+        return snapshot
     }
 
     func saveAppleMileage(_ value: AppleRouteDistanceSnapshot, for key: String) {
