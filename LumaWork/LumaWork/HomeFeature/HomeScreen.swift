@@ -224,7 +224,7 @@ struct HomeScreen: View {
             YandexRouteBrowser(url: destination.url)
         }
         .fullScreenCover(item: $appleRoute) { destination in
-            AppleRouteMapScreen(snapshot: destination.snapshot)
+            AppleRouteMapScreen(snapshot: destination.snapshot, routeStore: routeStore)
         }
         .alert("Отправить отчёт?", isPresented: $sendConfirmationPresented) {
             Button("Отправить") {
@@ -477,6 +477,12 @@ struct HomeScreen: View {
                 .disabled(!routeStore.canOpenAppleRouteMap)
                 .accessibilityLabel("Маршрут Apple Maps")
                 .accessibilityHint("Открывает полноэкранную карту маршрута")
+            }
+
+            if routeStore.appleRouteSnapshot?.unverifiedStopIndices?.isEmpty == false {
+                Text("Проверьте расположение точек на карте перед отправкой пробега.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.mutedTint)
             }
 
             if let error = routeStore.appleDistanceError {

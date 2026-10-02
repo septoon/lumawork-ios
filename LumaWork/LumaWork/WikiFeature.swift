@@ -215,6 +215,29 @@ final class WikiStore {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    var catalogUpdateMessage: String {
+        guard let snapshotID,
+              snapshotID.range(of: #"^\d{8}T\d{6}Z$"#, options: .regularExpression) != nil else {
+            return "Дата обновления каталога неизвестна."
+        }
+
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.calendar = Calendar(identifier: .gregorian)
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
+        parser.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        guard let date = parser.date(from: snapshotID), parser.string(from: date) == snapshotID else {
+            return "Дата обновления каталога неизвестна."
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
+        formatter.dateFormat = "dd.MM.yyyy 'в' HH:mm"
+        return "Каталог обновлен \(formatter.string(from: date))"
+    }
+
     func refreshContentVersion() async {
         guard let health = try? await service.health(), !Task.isCancelled else { return }
         articleCount = health.articles

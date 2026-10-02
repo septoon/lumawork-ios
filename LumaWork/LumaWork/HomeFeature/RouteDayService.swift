@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 import OSLog
 
 enum RouteMoveDirection {
@@ -171,7 +172,10 @@ struct RouteDayService {
                     "reason": stop.reason.trimmingCharacters(in: .whitespacesAndNewlines),
                     "status": statusLabel(for: stop.status),
                     "rejectReason": stop.declineReason.trimmingCharacters(in: .whitespacesAndNewlines),
-                    "requestNumber": stop.requestNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+                    "requestNumber": stop.requestNumber.trimmingCharacters(in: .whitespacesAndNewlines),
+                    "coordinateOverride": stop.coordinateOverride.map {
+                        ["latitude": $0.latitude, "longitude": $0.longitude] as Any
+                    } ?? NSNull()
                 ]
             }
         ]
@@ -308,8 +312,16 @@ struct RouteDayService {
             status: normalizeRemoteStatus(dictionary["status"]),
             declineReason: stringValue(dictionary["declineReason"]).nilIfEmpty
                 ?? stringValue(dictionary["rejectReason"]),
-            requestNumber: stringValue(dictionary["requestNumber"])
+            requestNumber: stringValue(dictionary["requestNumber"]),
+            coordinateOverride: normalizedCoordinate(dictionary["coordinateOverride"] ?? (dictionary["payload"] as? [String: Any])?["coordinateOverride"])
         )
+    }
+
+    private func normalizedCoordinate(_ raw: Any?) -> AppleRouteCoordinate? {
+        guard let value = raw as? [String: Any],
+              let latitude = doubleValue(value["latitude"]), let longitude = doubleValue(value["longitude"]) else { return nil }
+        let coordinate = AppleRouteCoordinate(CLLocationCoordinate2D(latitude: latitude, longitude: longitude))
+        return coordinate.isValid ? coordinate : nil
     }
 
     private func normalizeRemoteStatus(_ raw: Any?) -> RouteStopStatus {

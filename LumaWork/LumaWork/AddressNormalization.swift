@@ -67,4 +67,21 @@ extension String {
         parts[1] = "улица \(parts[1])"
         return parts.joined(separator: ", ")
     }
+
+    nonisolated func appleRouteStreetFallbackAddress() -> String? {
+        let parts = qualifiedAppleRouteAddress().components(separatedBy: ", ")
+        guard parts.count >= 3 else { return nil }
+        let building = parts.dropFirst(2).joined(separator: ", ")
+        guard !building.contains(where: \.isNumber),
+              building.range(of: "\\b(?:б\\s*/\\s*н|без\\s+номера)\\b", options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
+        return parts.prefix(2).joined(separator: ", ")
+    }
+}
+
+// Conservative identity: never merge different towns, house suffixes or building numbers.
+extension String {
+    nonisolated var routeCoordinateKey: String {
+        qualifiedAppleRouteAddress().lowercased(with: Locale(identifier: "ru_RU"))
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
 }

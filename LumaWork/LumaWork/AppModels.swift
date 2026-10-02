@@ -156,13 +156,18 @@ enum RouteStopStatus: String, Codable, Hashable {
 
 struct RouteStop: Codable, Hashable, Identifiable {
     var id: String
-    var address: String
+    var address: String {
+        didSet {
+            if address.routeCoordinateKey != oldValue.routeCoordinateKey { coordinateOverride = nil }
+        }
+    }
     var org: String
     var tid: String
     var reason: String
     var status: RouteStopStatus
     var declineReason: String
     var requestNumber: String
+    var coordinateOverride: AppleRouteCoordinate? = nil
 }
 
 struct RouteDayRecord: Codable, Hashable {
@@ -265,7 +270,7 @@ nonisolated enum RouteMapsProvider: String, Codable, CaseIterable, Hashable, Ide
             return manualKm
         case .apple:
             guard !isCalculating, plan.isComplete, let apple,
-                  apple.addresses == plan.addresses, apple.distanceKm >= 0 else { return nil }
+                  apple.matches(plan), apple.unverifiedStopIndices?.isEmpty != false, apple.routingIncomplete != true, apple.distanceKm >= 0 else { return nil }
             return apple.distanceKm
         }
     }

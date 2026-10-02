@@ -115,6 +115,7 @@ final class BackpackStore {
 
     var items: [BackpackItem] = []
     var isLoading = false
+    private(set) var isLoadingList = false
     var loadingDetailIDs: Set<String> = []
     var listRevision: UInt64 = 0
     var photoRevision: UInt64 = 0
@@ -143,8 +144,12 @@ final class BackpackStore {
         }
 
         isLoading = true
+        isLoadingList = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer {
+            isLoadingList = false
+            isLoading = false
+        }
 
         do {
             let listedItems = try await service.fetchItems(authKey: authKey)
@@ -163,6 +168,7 @@ final class BackpackStore {
                 return item
             }
             lastUpdatedAt = Date()
+            isLoadingList = false
             listRevision &+= 1
             photoRevision &+= 1
             AppOfflineSnapshotStore.save(items, key: cacheKey)
@@ -423,7 +429,7 @@ struct BackpackScreen: View {
     @State private var locationStore = BackpackItemLocationStore()
     @State private var selectedGroup: BackpackItemGroup?
     @State private var selectedLocationFilter: BackpackItemLocation?
-    @State private var refreshTask: Task<Void, Never>?
+    @State private var isOpening = true
     @State private var loadedPhotoRevision: UInt64?
     @State private var userInitiatedReturnRevision: UInt64?
     @State private var showsEquipment = false
@@ -482,7 +488,15 @@ struct BackpackScreen: View {
     }
 
     private var isPhotoLoading: Bool {
-        !store.items.isEmpty && loadedPhotoRevision != store.photoRevision
+        !store.items.isEmpty && store.listRevision > 0 && loadedPhotoRevision != store.photoRevision
+    }
+
+    private var isListLoading: Bool {
+        isOpening || store.isLoadingList || isInitialLoading
+    }
+
+    private var isDataLoading: Bool {
+        store.isLoading || coordinationStore.isReturnEquipmentLoading || isPhotoLoading
     }
 
     var body: some View {
@@ -502,9 +516,8 @@ struct BackpackScreen: View {
                         BackpackInventoryHeader(
                             itemCount: totalQuantity,
                             modelCount: groups.count,
-                            selectedLocation: $selectedLocationFilter,
                             lastUpdatedAt: store.lastUpdatedAt,
-                            isRefreshing: store.isLoading || coordinationStore.isReturnEquipmentLoading,
+                            isLoadingData: !isListLoading && isDataLoading,
                             onOpenEquipment: {
                                 AppHaptics.trigger()
                                 showsEquipment = true
@@ -518,12 +531,7 @@ struct BackpackScreen: View {
                             .depthStackSecondary()
                     }
 
-                    if isInitialLoading {
-                        BackpackInventorySkeleton(columns: columns)
-                            .depthStackSecondary()
-                    }
-
-                    if !store.isLoading && store.items.isEmpty && store.lastUpdatedAt != nil {
+                    if !isListLoading && store.items.isEmpty && store.lastUpdatedAt != nil {
                         AppCard {
                             ContentUnavailableView(
                                 "Рюкзак пуст",
@@ -534,7 +542,7 @@ struct BackpackScreen: View {
                         .depthStackSecondary()
                     }
 
-                    if !store.isLoading,
+                    if !isListLoading,
                        !store.items.isEmpty,
                        groups.isEmpty,
                        let selectedLocationFilter {
@@ -548,19 +556,37 @@ struct BackpackScreen: View {
                         .depthStackSecondary()
                     }
 
-                    if !groups.isEmpty {
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                            ForEach(groups) { group in
-                                BackpackInventoryTile(
-                                    group: group,
-                                    image: photoStore.image(for: group.representativeItem),
-                                    isPhotoLoading: isPhotoLoading,
-                                    isLoadingDetails: group.items.contains { store.loadingDetailIDs.contains($0.id) }
-                                ) {
-                                    AppHaptics.trigger()
-                                    selectedGroup = group
+                    if isListLoading || !groups.isEmpty {
+                        VStack(spacing: 0) {
+                            if isListLoading {
+                                BackpackInventorySkeleton(columns: columns)
+                            } else {
+                                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                                    ForEach(groups) { group in
+                                        BackpackInventoryTile(
+                                            group: group,
+                                            image: photoStore.image(for: group.representativeItem),
+                                            isPhotoLoading: isPhotoLoading,
+                                            isLoadingDetails: group.items.contains { store.loadingDetailIDs.contains($0.id) }
+                                        ) {
+                                            AppHaptics.trigger()
+                                            selectedGroup = group
+                                        }
+                                    }
                                 }
                             }
+                        }
+                        .background {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(.regularMaterial)
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                        .fill(AppTheme.performanceCardFill.opacity(0.72))
+                                }
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .stroke(AppTheme.border, lineWidth: 1)
                         }
                         .depthStackSecondary()
                     }
@@ -571,47 +597,39 @@ struct BackpackScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(action: startRefresh) {
-                    Group {
-                        if isRefreshInProgress {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                    }
-                    .frame(width: 22, height: 22)
-                }
-                .disabled(isRefreshInProgress || !simpleOneStore.isAuthorized)
-                .accessibilityLabel("Обновить рюкзак")
+                BackpackLocationFilterMenu(selection: $selectedLocationFilter)
+                    .disabled(!simpleOneStore.isAuthorized)
             }
         }
         .refreshable {
-            if simpleOneStore.isAuthorized, refreshTask == nil, !store.isLoading {
+            if simpleOneStore.isAuthorized, !store.isLoading {
                 await refresh()
             }
         }
         .task(id: simpleOneDataScopeID) {
             guard simpleOneStore.isAuthorized else { return }
-            await store.loadIfNeeded()
+            isOpening = false
+            await store.refresh()
         }
-        .task(id: store.listRevision) {
-            guard simpleOneStore.isAuthorized, !store.items.isEmpty else { return }
+        .task(id: isListLoading ? nil : store.listRevision) {
+            guard simpleOneStore.isAuthorized, !isListLoading,
+                  store.listRevision > 0, !store.items.isEmpty else { return }
             await coordinationStore.refreshReturnEquipment(
                 sessionID: makeCoordinationSessionID(for: simpleOneStore),
                 simpleOneStore: simpleOneStore,
                 showsNetworkBanner: userInitiatedReturnRevision == store.listRevision
             )
         }
-        .task(id: store.photoRevision) {
-            guard simpleOneStore.isAuthorized, !store.items.isEmpty else { return }
+        .task(id: isListLoading ? nil : store.photoRevision) {
+            guard simpleOneStore.isAuthorized, !isListLoading,
+                  store.listRevision > 0, !store.items.isEmpty else { return }
             let revision = store.photoRevision
             await photoStore.load(for: store.items)
             guard !Task.isCancelled else { return }
             loadedPhotoRevision = revision
         }
         .onDisappear {
-            refreshTask?.cancel()
+            isOpening = true
         }
         .sheet(item: $selectedGroup) { group in
             let currentGroup = groups.first(where: { current in
@@ -639,20 +657,6 @@ struct BackpackScreen: View {
         await store.refresh()
     }
 
-    private func startRefresh() {
-        guard refreshTask == nil, !store.isLoading else { return }
-
-        AppHaptics.trigger()
-        refreshTask = Task { @MainActor in
-            defer { refreshTask = nil }
-            await refresh()
-        }
-    }
-
-    private var isRefreshInProgress: Bool {
-        refreshTask != nil || store.isLoading || coordinationStore.isReturnEquipmentLoading
-    }
-
     private var simpleOneDataScopeID: String {
         "\(simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: simpleOneStore))"
     }
@@ -667,9 +671,8 @@ struct BackpackScreen: View {
 private struct BackpackInventoryHeader: View {
     let itemCount: Int
     let modelCount: Int
-    @Binding var selectedLocation: BackpackItemLocation?
     let lastUpdatedAt: Date?
-    let isRefreshing: Bool
+    let isLoadingData: Bool
     let onOpenEquipment: () -> Void
 
     var body: some View {
@@ -685,13 +688,9 @@ private struct BackpackInventoryHeader: View {
                 }
                 .frame(width: 58, height: 58)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Мой рюкзак")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(AppTheme.ink)
-
-                    BackpackLocationFilterMenu(selection: $selectedLocation)
-                }
+                Text("Мой рюкзак")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(AppTheme.ink)
 
                 Spacer(minLength: 0)
             }
@@ -744,10 +743,13 @@ private struct BackpackInventoryHeader: View {
             .buttonStyle(.plain)
             .accessibilityHint("Открывает оборудование, закреплённое за вами в SimpleOne")
 
-            if isRefreshing {
-                SkeletonPlaceholder(cornerRadius: 5)
-                    .frame(width: 138, height: 12)
-                    .accessibilityLabel("Обновляется рюкзак")
+            if isLoadingData {
+                CoordinationShimmerText(
+                    text: "Загрузка данных",
+                    font: .caption,
+                    tint: AppTheme.mutedTint
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else if let lastUpdatedAt {
                 Text(updatedText(for: lastUpdatedAt))
                     .font(.caption)
@@ -806,8 +808,6 @@ private struct BackpackInventoryHeaderSkeleton: View {
                 VStack(alignment: .leading, spacing: 8) {
                     SkeletonPlaceholder(cornerRadius: 7)
                         .frame(width: 150, height: 24)
-                    SkeletonPlaceholder(cornerRadius: 15)
-                        .frame(width: 82, height: 30)
                 }
                 Spacer(minLength: 0)
             }
@@ -822,8 +822,6 @@ private struct BackpackInventoryHeaderSkeleton: View {
             SkeletonPlaceholder(cornerRadius: 18)
                 .frame(maxWidth: .infinity)
                 .frame(height: 62)
-            SkeletonPlaceholder(cornerRadius: 5)
-                .frame(width: 138, height: 12)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -856,11 +854,6 @@ private struct BackpackInventorySkeleton: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppTheme.cardSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(AppTheme.border, lineWidth: 1)
-                }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -873,10 +866,6 @@ private struct BackpackLocationFilterMenu: View {
 
     private var title: String {
         selection?.title ?? "Все"
-    }
-
-    private var systemImage: String {
-        selection?.systemImage ?? "square.grid.2x2.fill"
     }
 
     var body: some View {
@@ -901,25 +890,9 @@ private struct BackpackLocationFilterMenu: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                Text(title)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .opacity(0.72)
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(AppTheme.primaryTint)
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(AppTheme.primaryTint.opacity(0.11), in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(AppTheme.primaryTint.opacity(0.2), lineWidth: 1)
-            }
+            Image(systemName: selection == nil ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
         }
-        .buttonStyle(.plain)
-        .fixedSize()
+        .tint(AppTheme.primaryTint)
         .accessibilityLabel("Фильтр местоположения: \(title)")
         .accessibilityHint("Открывает выбор местоположения")
     }
@@ -1004,11 +977,6 @@ private struct BackpackInventoryTile: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppTheme.cardSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(AppTheme.border, lineWidth: 1)
-            )
             .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
         .buttonStyle(.plain)

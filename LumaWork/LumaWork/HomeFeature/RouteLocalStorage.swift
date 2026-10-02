@@ -33,6 +33,7 @@ final class RouteLocalStorage {
     private let dailyMileageKey = "route.pwa.daily-mileages"
     private let appleMileageKey = "route.apple-map-mileages"
     private let defaults: UserDefaults
+    private let coordinateKey: String
     private var daysCache: [String: RouteDayRecord]?
     private var settingsCache: RouteSettings?
     private var queueCache: [RouteQueueItem]?
@@ -40,8 +41,9 @@ final class RouteLocalStorage {
     private var dailyMileageCache: [String: Int]?
     private var pendingDaysSave: Task<Void, Never>?
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, cacheID: String? = nil) {
         self.defaults = defaults
+        self.coordinateKey = "route.confirmed-coordinates." + (cacheID ?? "local")
     }
 
     deinit {
@@ -77,7 +79,7 @@ final class RouteLocalStorage {
         return normalized
     }
 
-    func saveDay(_ record: RouteDayRecord) {
+    func saveDay(_ record: RouteDayRecord, immediately: Bool = false) {
         var all = loadAllDays()
         let settings = loadSettings()
         let monthKey = Self.monthKey(for: record.date)
@@ -96,6 +98,10 @@ final class RouteLocalStorage {
             periodStartOdometer: loadPeriodStartOdometer(for: monthKey)
         )
         saveAllDays(all)
+        if immediately {
+            pendingDaysSave?.cancel()
+            saveAllDaysImmediately(all)
+        }
     }
 
     func loadAllDays() -> [String: RouteDayRecord] {
@@ -203,6 +209,20 @@ final class RouteLocalStorage {
             return [:]
         }
         return decoded
+    }
+
+    func loadConfirmedCoordinates() -> [String: AppleRouteCoordinate] {
+        guard let data = defaults.data(forKey: coordinateKey),
+              let values = try? JSONDecoder().decode([String: AppleRouteCoordinate].self, from: data) else { return [:] }
+        return values.filter { $0.value.isValid }
+    }
+
+    func saveConfirmedCoordinate(_ coordinate: AppleRouteCoordinate?, for address: String) {
+        var values = loadConfirmedCoordinates()
+        if let coordinate, coordinate.isValid { values[address.routeCoordinateKey] = coordinate }
+        else { values.removeValue(forKey: address.routeCoordinateKey) }
+        guard let data = try? JSONEncoder().encode(values) else { return }
+        defaults.set(data, forKey: coordinateKey)
     }
 
     func enqueue(_ date: String, workType: RouteWorkType = .pos, mapsProvider: RouteMapsProvider = .yandex) {
@@ -340,7 +360,8 @@ final class RouteLocalStorage {
                 reason: stop.reason,
                 status: normalizeStatus(stop.status.rawValue, fallback: fallbackStatus),
                 declineReason: stop.declineReason,
-                requestNumber: stop.requestNumber
+                requestNumber: stop.requestNumber,
+                coordinateOverride: stop.coordinateOverride
             )
         }
 

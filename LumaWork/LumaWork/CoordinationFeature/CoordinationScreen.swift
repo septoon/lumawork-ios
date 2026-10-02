@@ -1306,7 +1306,7 @@ private struct CoordinationLoadingCard: View {
     }
 }
 
-private struct CoordinationShimmerText: View {
+struct CoordinationShimmerText: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let text: String

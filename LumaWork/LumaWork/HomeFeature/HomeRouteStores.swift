@@ -13,7 +13,7 @@ struct RouteMonthlyMileage: Hashable {
 @Observable
     final class HomeRouteStore {
     private let service: RouteDayService
-    private let storage = RouteLocalStorage()
+    private let storage: RouteLocalStorage
     private var hasLoaded = false
     private let reportStartDate = "2026-04-01"
     private let appleDistanceCalculator = AppleRouteDistanceCalculator()
@@ -42,12 +42,13 @@ struct RouteMonthlyMileage: Hashable {
     private(set) var dailyMileageByDate: [String: Int] = [:]
     private(set) var isMileageHistoryReady = false
     private(set) var appleRouteSnapshot: AppleRouteDistanceSnapshot?
-    var appleDistanceKm: Int? { appleRouteSnapshot?.distanceKm }
+    var appleDistanceKm: Int? { appleRouteSnapshot?.routingIncomplete == true ? nil : appleRouteSnapshot?.distanceKm }
     private(set) var isCalculatingAppleDistance = false
     private(set) var appleDistanceError: String?
 
-    init(service: RouteDayService) {
+    init(service: RouteDayService, cacheID: String? = nil) {
         self.service = service
+        self.storage = RouteLocalStorage(cacheID: cacheID)
         let todayKey = RouteDateFormatter.dayKey(from: Date())
         self.routeSettings = storage.loadSettings()
         self.record = storage.loadDay(todayKey, workType: .pos)
@@ -59,7 +60,7 @@ struct RouteMonthlyMileage: Hashable {
     func refreshAppleDistance(force: Bool = false) {
         let input = AppleDistanceInput(
             key: record.workType.storageKey(for: record.date),
-            plan: AppleRoutePlan(addresses: record.stops.map(\.address))
+            plan: currentAppleRoutePlan
         )
         guard force || input != appleDistanceInput else { return }
         appleDistanceInput = input
@@ -79,13 +80,15 @@ struct RouteMonthlyMileage: Hashable {
             return
         }
         if !force, let cached = storage.loadAppleMileage(for: input.key),
-           cached.addresses == input.plan.addresses, cached.hasGeometry {
+           cached.matches(input.plan), cached.hasGeometry {
             appleRouteSnapshot = cached
+            appleDistanceError = cached.routingFailureDescription
             return
         }
 
         isCalculatingAppleDistance = true
         let calculator = appleDistanceCalculator
+        if force { calculator.clearGeocodingCache() }
         appleDistanceTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(350))
@@ -93,6 +96,7 @@ struct RouteMonthlyMileage: Hashable {
                 try Task.checkCancellation()
                 guard let self, self.appleDistanceRevision == revision else { return }
                 self.appleRouteSnapshot = snapshot
+                self.appleDistanceError = snapshot.routingFailureDescription
                 self.isCalculatingAppleDistance = false
                 self.storage.saveAppleMileage(
                     snapshot,
@@ -149,7 +153,7 @@ struct RouteMonthlyMileage: Hashable {
         routeSettings.mapsProvider.reportDistanceKm(
             manualKm: record.distanceKm,
             apple: appleRouteSnapshot,
-            plan: AppleRoutePlan(addresses: record.stops.map(\.address)),
+            plan: currentAppleRoutePlan,
             isCalculating: isCalculatingAppleDistance
         )
     }
@@ -158,6 +162,32 @@ struct RouteMonthlyMileage: Hashable {
         var report = record
         report.distanceKm = reportDistanceKm
         return report
+    }
+
+    var currentAppleRoutePlan: AppleRoutePlan {
+        AppleRoutePlan(stops: record.stops, remembered: storage.loadConfirmedCoordinates())
+    }
+
+    // The editor works on a draft; reject it if the day changed while the map was open.
+    func applyRouteCoordinates(from original: RouteDayRecord, overrides: [AppleRouteCoordinate?], remember: Set<Int>, forget: Set<Int>) -> Bool {
+        guard original.date == record.date, original.workType == record.workType,
+              original.stops == record.stops, overrides.count == record.stops.count,
+              overrides.allSatisfy({ $0?.isValid != false }), !isSending else { return false }
+        var updated = record
+        for index in updated.stops.indices {
+            updated.stops[index].coordinateOverride = overrides[index]
+            if forget.contains(index) {
+                storage.saveConfirmedCoordinate(nil, for: updated.stops[index].address)
+            } else if remember.contains(index), let coordinate = overrides[index] {
+                storage.saveConfirmedCoordinate(coordinate, for: updated.stops[index].address)
+            }
+        }
+        updated.distanceKm = nil
+        updated.sent = false
+        record = updated
+        persistCurrentRecord(immediately: true)
+        refreshAppleDistance(force: true)
+        return true
     }
 
     var canOpenAppleRouteMap: Bool {
@@ -209,6 +239,7 @@ struct RouteMonthlyMileage: Hashable {
         }
 
         isLoadingRemote = true
+        let requestedRecord = record
         let settings = routeSettings
 
         Task {
@@ -220,6 +251,10 @@ struct RouteMonthlyMileage: Hashable {
                 )
                 await MainActor.run {
                     guard self.selectedDateKey == dateKey, self.workType == selectedWorkType else { return }
+                    guard self.record == requestedRecord else {
+                        self.isLoadingRemote = false
+                        return
+                    }
                     if let remote {
                         self.record = remote
                         self.storage.saveDay(remote)
@@ -286,7 +321,8 @@ struct RouteMonthlyMileage: Hashable {
             reason: source.reason,
             status: source.status,
             declineReason: source.declineReason,
-            requestNumber: source.requestNumber
+            requestNumber: source.requestNumber,
+            coordinateOverride: source.coordinateOverride
         )
 
         record.stops.insert(duplicate, at: index + 1)
@@ -450,7 +486,8 @@ struct RouteMonthlyMileage: Hashable {
 
         guard let url = YandexRouteLinks.webURL(
             baseURL: AppConfig().mapsRouteURL,
-            addresses: addresses
+            addresses: addresses,
+            coordinateOverrides: currentAppleRoutePlan.coordinateOverrides
         ) else {
             errorMessage = "Не удалось собрать ссылку Яндекс.Карт."
             return nil
@@ -693,7 +730,9 @@ struct RouteMonthlyMileage: Hashable {
         if usesAppleMaps, reportDistanceKm == nil {
             errorMessage = isCalculatingAppleDistance
                 ? "Дождитесь расчёта пробега через Apple Maps."
-                : appleDistanceError ?? "Рассчитайте пробег через Apple Maps перед отправкой."
+                : appleDistanceError ?? (appleRouteSnapshot?.unverifiedStopIndices?.isEmpty == false
+                    ? "Проверьте расположение точек на карте перед отправкой пробега."
+                    : "Рассчитайте пробег через Apple Maps перед отправкой.")
             return false
         }
 
@@ -759,8 +798,8 @@ struct RouteMonthlyMileage: Hashable {
         }
     }
 
-    private func persistCurrentRecord() {
-        storage.saveDay(record)
+    private func persistCurrentRecord(immediately: Bool = false) {
+        storage.saveDay(record, immediately: immediately)
         refreshAddressOptions()
     }
 
@@ -815,7 +854,7 @@ struct RouteMonthlyMileage: Hashable {
                 guard let distanceKm = item.mapsProvider.reportDistanceKm(
                     manualKm: day.distanceKm,
                     apple: storage.loadAppleMileage(for: key),
-                    plan: AppleRoutePlan(addresses: day.stops.map(\.address)),
+                    plan: AppleRoutePlan(stops: day.stops, remembered: storage.loadConfirmedCoordinates()),
                     isCalculating: false
                 ) else { continue }
                 day.distanceKm = distanceKm

@@ -42,7 +42,8 @@ final class AppDataStores {
 
         profileStore = ProfileStore()
         homeStore = HomeRouteStore(
-            service: RouteDayService(config: config, authToken: authToken)
+            service: RouteDayService(config: config, authToken: authToken),
+            cacheID: userID
         )
         maintenanceStore = MaintenanceStore(
             service: MaintenanceService(config: config, authToken: authToken),

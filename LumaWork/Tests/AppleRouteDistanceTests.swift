@@ -89,6 +89,75 @@ struct AppleRouteDistanceTests {
         } catch is CancellationError {}
 
         let decoder = JSONDecoder()
+        let missingAddress = "Алушта, ул. Парковая, Строение б/н в районе детского парка"
+        expect(missingAddress.appleRouteStreetFallbackAddress() == "Алушта, улица Парковая",
+               "an unnumbered building can fall back to its original city and street")
+        expect("Алушта, Парковая, без номера".appleRouteStreetFallbackAddress() == "Алушта, Парковая",
+               "the written unnumbered form also supports a street fallback")
+        expect("Алушта, Парковая, 2а".appleRouteStreetFallbackAddress() == nil,
+               "a real house number must never be discarded")
+        expect("Алушта, Парковая, корпус 2 б/н".appleRouteStreetFallbackAddress() == nil,
+               "numbered buildings are not silently reduced to a street")
+        expect(AppleRouteAddressValidation.matchesStreet(query: missingAddress,
+               found: "Парковая улица, Городской Округ Алушта"), "fallback preserves city and street")
+        expect(!AppleRouteAddressValidation.matchesStreet(query: missingAddress,
+               found: "Парковая улица, Ялта"), "a street fallback in another city is rejected")
+        expect(!AppleRouteAddressValidation.matches(query: missingAddress,
+               found: "Парковая улица, Городской Округ Алушта"), "a street fallback never confirms the building")
+        let missingPointError = AppleRouteDistanceError.geocodingFailure(
+            for: missingAddress, error: NSError(domain: "MKErrorDomain", code: 4))
+        expect(missingPointError.localizedDescription == "Apple Maps не нашёл адрес: \(missingAddress).",
+               "MapKit placemarkNotFound must identify the original stop rather than suggest a network failure")
+        let serviceError = AppleRouteDistanceError.geocodingFailure(
+            for: missingAddress, error: NSError(domain: "NSURLErrorDomain", code: -1009))
+        expect(serviceError.localizedDescription.contains(missingAddress), "geocoding service failures must retain the address")
+        let failedLeg = AppleRouteDistanceSnapshot(addresses: ["Склад", missingAddress, "Финиш"], distanceKm: 0,
+            routingIncomplete: true, failedLegIndex: 1)
+        expect(failedLeg.routingFailureDescription?.contains(missingAddress) == true
+               && failedLeg.routingFailureDescription?.contains("Финиш") == true,
+               "road failure must identify the actual pair of stops")
+        let restoredFailedLeg = try decoder.decode(AppleRouteDistanceSnapshot.self, from: JSONEncoder().encode(failedLeg))
+        expect(restoredFailedLeg.routingFailureDescription == failedLeg.routingFailureDescription,
+               "cached failures must retain the failed leg")
+        let legacyFailedLeg = try decoder.decode(AppleRouteDistanceSnapshot.self,
+            from: Data("{\"addresses\":[\"Склад\",\"Финиш\"],\"distanceKm\":0,\"routingIncomplete\":true}".utf8))
+        expect(legacyFailedLeg.routingFailureDescription == AppleRouteDistanceError.directionsUnavailable.localizedDescription,
+               "legacy cached failures remain readable")
+        let correctedStopJSON = """
+        {"id":"stop-1","address":"Алушта, Набережная, 25","org":"","tid":"25","reason":"",
+        "status":"done","declineReason":"","requestNumber":"R1",
+        "coordinateOverride":{"latitude":44.652403,"longitude":34.400928}}
+        """
+        let correctedStop = try decoder.decode(RouteStop.self, from: Data(correctedStopJSON.utf8))
+        let encodedStop = try JSONSerialization.jsonObject(with: JSONEncoder().encode(correctedStop)) as! [String: Any]
+        expect(encodedStop["coordinateOverride"] != nil, "manual coordinate must survive route serialization")
+        expect(correctedStop.coordinateOverride?.latitude == 44.652403, "manual coordinate is decoded")
+        var editedStop = correctedStop
+        editedStop.address = "Алушта, Набережная, 9"
+        expect(editedStop.coordinateOverride == nil, "editing the house clears its old coordinate")
+        var reformattedStop = correctedStop
+        reformattedStop.address = "Алушта, ул Набережная, д 25"
+        expect(reformattedStop.coordinateOverride == correctedStop.coordinateOverride, "equivalent formatting retains correction")
+        let correctedPlan = AppleRoutePlan(stops: [correctedStop, correctedStop, correctedStop])
+        var staleSnapshot = AppleRouteDistanceSnapshot(addresses: correctedPlan.addresses, distanceKm: 20)
+        expect(!staleSnapshot.matches(correctedPlan), "address-only cache is stale after manual point movement")
+        staleSnapshot.coordinateOverrides = correctedPlan.coordinateOverrides
+        expect(staleSnapshot.matches(correctedPlan), "cache matches exact manual coordinates")
+        staleSnapshot.unverifiedStopIndices = [1]
+        expect(RouteMapsProvider.apple.reportDistanceKm(manualKm: 20, apple: staleSnapshot, plan: correctedPlan, isCalculating: false) == nil,
+               "unconfirmed geocoding cannot enter a report")
+        staleSnapshot.unverifiedStopIndices = []
+        staleSnapshot.routingIncomplete = true
+        expect(RouteMapsProvider.apple.reportDistanceKm(manualKm: 20, apple: staleSnapshot, plan: correctedPlan, isCalculating: false) == nil,
+               "directions failure never supplies zero mileage to a report")
+        expect(AppleRouteAddressValidation.matches(query: "Алушта, Набережная, 25", found: "Набережная улица, 25, Алушта"), "city street and house match regardless of order")
+        expect(!AppleRouteAddressValidation.matches(query: "Алушта, Набережная, 25", found: "Набережная улица, Алушта"), "street-only result cannot confirm a house")
+        expect(!AppleRouteAddressValidation.matches(query: "Алушта, Набережная, 25", found: "Набережная улица, 250, Алушта"), "house number must match exactly")
+        expect(!AppleRouteAddressValidation.matches(query: "Алушта, Набережная, 25", found: "Набережная улица, 25, Ялта"), "another city cannot confirm the address")
+        expect(!AppleRouteAddressValidation.matches(query: "Алушта, Горького, 6-в", found: "улица Горького, 6-б, Алушта"), "house letter must match")
+        expect(AppleRouteAddressValidation.matches(query: "Алушта, Горького, 6-в", found: "улица Горького, 6в, Алушта"), "house letter survives separator normalization")
+        expect("Алушта, Горького, 6-в".routeCoordinateKey != "Алушта, Горького, 6-б".routeCoordinateKey, "remembered addresses preserve house letters")
+        expect("Ялта, Ленина, 1".routeCoordinateKey != "Алушта, Ленина, 1".routeCoordinateKey, "remembered addresses preserve towns")
         let legacySettings = try decoder.decode(RouteSettings.self, from: Data("{\"warehouseAddress\":\"Склад\",\"homeAddress\":\"Дом\"}".utf8))
         expect(legacySettings.mapsProvider == .yandex, "existing settings default to Yandex")
         var settings = legacySettings
@@ -139,6 +208,14 @@ struct AppleRouteDistanceTests {
         storage.saveAppleMileage(snapshot, for: "2026-10-02")
         let restoredSnapshot = restoredStorage.loadAppleMileage(for: "2026-10-02")
         expect(restoredSnapshot?.distanceKm == 52, "Apple mileage survives restart independently of manual mileage")
+        storage.saveDay(RouteDayRecord(date: "2026-10-03", stops: [correctedStop, correctedStop, correctedStop], sent: false))
+        expect(storage.loadDay("2026-10-03").stops[1].coordinateOverride == correctedStop.coordinateOverride, "normalizing and hydrating a day preserve corrections")
+        storage.saveConfirmedCoordinate(correctedStop.coordinateOverride, for: correctedStop.address)
+        expect(restoredStorage.loadConfirmedCoordinates()[correctedStop.address.routeCoordinateKey] == correctedStop.coordinateOverride, "remembered coordinates survive storage recreation")
+        let anotherAccount = RouteLocalStorage(defaults: defaults, cacheID: "another-user")
+        expect(anotherAccount.loadConfirmedCoordinates().isEmpty, "remembered coordinates are isolated by account")
+        storage.saveConfirmedCoordinate(nil, for: correctedStop.address)
+        expect(storage.loadConfirmedCoordinates().isEmpty, "reset removes a remembered coordinate")
         print("Apple route distance tests passed")
     }
 

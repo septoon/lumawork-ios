@@ -30,6 +30,7 @@ struct AssistantWorkspaceScreen: View {
     @Bindable var assistantStore: AssistantStore
     @State private var selectedSection: AssistantWorkspaceSection = .assistant
     @State private var isChatHistoryPresented = false
+    @State private var isWikiInfoPresented = false
     @State private var pendingChatHistoryAction: AssistantChatHistoryAction?
     @State private var keyboardDismissRequest = 0
 
@@ -52,40 +53,57 @@ struct AssistantWorkspaceScreen: View {
             }
 
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: assistantStore.hasActiveConversation ? 18 : 0) {
+                if selectedSection == .wiki {
                     Button {
                         AppHaptics.trigger(.expandCollapse)
-                        Task { @MainActor in
-                            await Task.yield()
-                            assistantStore.startNewConversation()
-                        }
+                        isWikiInfoPresented = true
                     } label: {
-                        Label("Новый чат", systemImage: "square.and.pencil")
+                        Label("Информация о каталоге", systemImage: "info.circle")
                             .labelStyle(.iconOnly)
                     }
-                    .frame(width: assistantStore.hasActiveConversation ? 28 : 0)
-                    .opacity(assistantStore.hasActiveConversation ? 1 : 0)
-                    .clipped()
-                    .allowsHitTesting(assistantStore.hasActiveConversation)
-                    .accessibilityHidden(!assistantStore.hasActiveConversation)
+                    .popover(
+                        isPresented: $isWikiInfoPresented,
+                        attachmentAnchor: .rect(.bounds),
+                        arrowEdge: .top
+                    ) {
+                        Text(wikiStore.catalogUpdateMessage)
+                            .font(.subheadline)
+                            .padding(16)
+                            .presentationCompactAdaptation(.popover)
+                    }
+                } else {
+                    HStack(spacing: assistantStore.hasActiveConversation ? 18 : 0) {
+                        Button {
+                            AppHaptics.trigger(.expandCollapse)
+                            Task { @MainActor in
+                                await Task.yield()
+                                assistantStore.startNewConversation()
+                            }
+                        } label: {
+                            Label("Новый чат", systemImage: "square.and.pencil")
+                                .labelStyle(.iconOnly)
+                        }
+                        .frame(width: assistantStore.hasActiveConversation ? 28 : 0)
+                        .opacity(assistantStore.hasActiveConversation ? 1 : 0)
+                        .clipped()
+                        .allowsHitTesting(assistantStore.hasActiveConversation)
+                        .accessibilityHidden(!assistantStore.hasActiveConversation)
 
-                    Button {
-                        AppHaptics.trigger(.expandCollapse)
-                        keyboardDismissRequest += 1
-                        dismissKeyboard()
-                        Task { @MainActor in
-                            await Task.yield()
-                            isChatHistoryPresented = true
+                        Button {
+                            AppHaptics.trigger(.expandCollapse)
+                            keyboardDismissRequest += 1
+                            dismissKeyboard()
+                            Task { @MainActor in
+                                await Task.yield()
+                                isChatHistoryPresented = true
+                            }
+                        } label: {
+                            Label("Предыдущие чаты", systemImage: "ellipsis")
+                                .labelStyle(.iconOnly)
                         }
-                    } label: {
-                        Label("Предыдущие чаты", systemImage: "ellipsis")
-                            .labelStyle(.iconOnly)
+                        .accessibilityLabel("Предыдущие чаты")
                     }
-                    .accessibilityLabel("Предыдущие чаты")
                 }
-                .opacity(selectedSection == .assistant ? 1 : 0)
-                .allowsHitTesting(selectedSection == .assistant)
-                .accessibilityHidden(selectedSection != .assistant)
             }
         }
         .sheet(isPresented: $isChatHistoryPresented, onDismiss: performPendingChatHistoryAction) {

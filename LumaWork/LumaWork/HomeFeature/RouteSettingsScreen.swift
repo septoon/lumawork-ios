@@ -19,6 +19,13 @@ struct RouteSettingsScreen: View {
                         draft.mapsProvider = provider
                     } label: {
                         HStack(spacing: 12) {
+                            Image(provider == .apple ? "AppleMapsIcon" : "YandexMapsIcon")
+                                .renderingMode(.original)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 32, height: 32)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .accessibilityHidden(true)
                             Text(provider.title)
                                 .foregroundStyle(AppTheme.ink)
                             Spacer(minLength: 8)
