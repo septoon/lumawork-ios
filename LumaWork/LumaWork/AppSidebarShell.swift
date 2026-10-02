@@ -1056,11 +1056,13 @@ private struct AppSidebarSettingsPlaceholder: View {
                 settingsNavigationLink(
                     "Профиль",
                     systemImage: "person.crop.circle",
+                    tint: .blue,
                     destination: .profile
                 )
                 settingsNavigationLink(
                     "ГСМ профиль",
                     systemImage: "fuelpump",
+                    tint: .orange,
                     destination: .gsmProfile
                 )
             }
@@ -1069,6 +1071,7 @@ private struct AppSidebarSettingsPlaceholder: View {
                 settingsNavigationLink(
                     "Старт и финиш",
                     systemImage: "point.topleft.down.curvedto.point.bottomright.up",
+                    tint: .green,
                     destination: .route
                 )
             }
@@ -1077,17 +1080,26 @@ private struct AppSidebarSettingsPlaceholder: View {
                 settingsNavigationLink(
                     "Уведомления",
                     systemImage: "bell.badge",
+                    tint: .red,
                     destination: .notifications
                 )
                 settingsNavigationLink(
                     "Экраны",
                     systemImage: "rectangle.grid.1x2",
+                    tint: .indigo,
                     destination: .screens
                 )
                 settingsNavigationLink(
                     "Оформление",
                     systemImage: "circle.lefthalf.filled",
+                    tint: .purple,
                     destination: .appearance
+                )
+                settingsNavigationLink(
+                    "Siri и команды",
+                    systemImage: "waveform",
+                    tint: .pink,
+                    destination: .siri
                 )
             }
 
@@ -1103,7 +1115,7 @@ private struct AppSidebarSettingsPlaceholder: View {
                                 .foregroundStyle(.secondary)
                         }
                     } icon: {
-                        Image(systemName: "faceid")
+                        settingsIcon("faceid", tint: .teal)
                     }
                 }
                 .tint(AppTheme.primaryTint)
@@ -1119,7 +1131,11 @@ private struct AppSidebarSettingsPlaceholder: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.trailing)
                 } label: {
-                    Label("Электронная почта", systemImage: "envelope")
+                    Label {
+                        Text("Электронная почта")
+                    } icon: {
+                        settingsIcon("envelope", tint: .blue)
+                    }
                 }
 
                 Button(role: .destructive) {
@@ -1129,7 +1145,11 @@ private struct AppSidebarSettingsPlaceholder: View {
                         dismiss()
                     }
                 } label: {
-                    Label("Выйти", systemImage: "rectangle.portrait.and.arrow.right")
+                    Label {
+                        Text("Выйти")
+                    } icon: {
+                        settingsIcon("rectangle.portrait.and.arrow.right", tint: .red)
+                    }
                 }
             }
         }
@@ -1160,6 +1180,8 @@ private struct AppSidebarSettingsPlaceholder: View {
                 )
             case .appearance:
                 AppearanceSettingsScreen()
+            case .siri:
+                EngineerSiriSettingsScreen()
             }
         }
         .scrollContentBackground(.hidden)
@@ -1313,17 +1335,32 @@ private struct AppSidebarSettingsPlaceholder: View {
     private func settingsNavigationLink(
         _ title: String,
         systemImage: String,
+        tint: Color,
         destination: AppSidebarSettingsDestination
     ) -> some View {
         NavigationLink(value: destination) {
             HStack {
-                Label(title, systemImage: systemImage)
+                Label {
+                    Text(title)
+                } icon: {
+                    settingsIcon(systemImage, tint: tint)
+                }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .contentShape(Rectangle())
+    }
+
+    private func settingsIcon(_ systemImage: String, tint: Color) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 17, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(.white)
+            .frame(width: 30, height: 30)
+            .background(tint, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .accessibilityHidden(true)
     }
 }
 
@@ -1334,6 +1371,7 @@ private enum AppSidebarSettingsDestination: Hashable {
     case notifications
     case screens
     case appearance
+    case siri
 }
 
 private struct AvatarCameraPicker: UIViewControllerRepresentable {

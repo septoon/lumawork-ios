@@ -1,0 +1,19 @@
+"Сколько бензина я должен в ${applicationName}" = "Сколько бензина я должен в ${applicationName}";
+"Какой долг за бензин в ${applicationName}" = "Какой долг за бензин в ${applicationName}";
+"Какой пробег в ${applicationName}" = "Какой пробег в ${applicationName}";
+"Какой пробег за ${period} в ${applicationName}" = "Какой пробег за ${period} в ${applicationName}";
+"Какой мой VIN в ${applicationName}" = "Какой мой VIN в ${applicationName}";
+"Узнай VIN в ${applicationName}" = "Узнай VIN в ${applicationName}";
+"Сколько у меня заявок сегодня в ${applicationName}" = "Сколько у меня заявок сегодня в ${applicationName}";
+"Заявки на сегодня в ${applicationName}" = "Заявки на сегодня в ${applicationName}";
+"Что по заявке в ${applicationName}" = "Что по заявке в ${applicationName}";
+"Найди заявку в ${applicationName}" = "Найди заявку в ${applicationName}";
+"Что по заявке ${request} в ${applicationName}" = "Что по заявке ${request} в ${applicationName}";
+"Куда ехать дальше в ${applicationName}" = "Куда ехать дальше в ${applicationName}";
+"Следующая точка в ${applicationName}" = "Следующая точка в ${applicationName}";
+"Узнай ${information} в ${applicationName}" = "Узнай ${information} в ${applicationName}";
+"Узнай данные в ${applicationName}" = "Узнай данные в ${applicationName}";
+"Спроси ${applicationName}" = "Спроси ${applicationName}";
+"Задай вопрос в ${applicationName}" = "Задай вопрос в ${applicationName}";
+"Найди инструкцию в ${applicationName}" = "Найди инструкцию в ${applicationName}";
+

@@ -91,6 +91,10 @@ struct ContentView: View {
             }
         }
         .task(id: widgetPublicationTrigger) {
+            EngineerVoiceRequestIndex.publish(
+                store: stores.simpleOneStore,
+                userID: sessionStore.session?.user.id
+            )
             WidgetSnapshotPublisher.publish(
                 stores: stores,
                 isAuthenticated: sessionStore.isAuthenticated

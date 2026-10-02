@@ -189,6 +189,14 @@ final class ClosedSimpleOneRequestsStore {
         isCacheComplete = snapshot.isComplete
     }
 
+    /// Voice queries must not mistake a partial or another user's archive for
+    /// a complete result, or start a long archive sync in the Siri runtime.
+    nonisolated static func completeVoiceSnapshot(for userID: String) -> (records: [SimpleOneRequestRecord], updatedAt: Date)? {
+        guard let snapshot = cachedSnapshot(), snapshot.userID == userID,
+              snapshot.isComplete, let updatedAt = snapshot.updatedAt else { return nil }
+        return (snapshot.records, updatedAt)
+    }
+
     private func saveSnapshot(records snapshotRecords: [SimpleOneRequestRecord], isComplete: Bool) {
         guard let loadedUserID, !loadedUserID.isEmpty else { return }
 

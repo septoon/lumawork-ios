@@ -200,7 +200,7 @@ final class BackpackStore {
     }
 }
 
-private struct BackpackService {
+struct BackpackService {
     private let simpleOneService = SimpleOneRequestsService()
     private var condition: String {
         guard let currentUserDynamicID = AppConfig.resolveFirst("SIMPLEONE_CURRENT_USER_DYNAMIC_ID"),

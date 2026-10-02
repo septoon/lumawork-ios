@@ -128,6 +128,7 @@ struct AppRootView: View {
                 }
             } else {
                 WidgetSnapshotPublisher.publishSignedOut()
+                EngineerVoiceRequestIndex.invalidateSuggestions()
                 dataStores = nil
             }
         }

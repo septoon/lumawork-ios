@@ -29,7 +29,7 @@ struct GsmProjectOption: Codable, Hashable, Identifiable {
     let budgetCode: String
 }
 
-fileprivate struct GsmProfileLoadResult {
+struct GsmProfileLoadResult {
     let profile: GsmProfile
     let availableFuelTypes: [String]
 }
@@ -111,7 +111,7 @@ struct GsmProfileAPI {
         self.authToken = authToken
     }
 
-    fileprivate func fetchProfile() async throws -> GsmProfileLoadResult {
+    func fetchProfile() async throws -> GsmProfileLoadResult {
         guard let authToken, let url = url(path: "/api/v2/gsm/profile") else {
             throw AppServiceError.message("Требуется авторизация.")
         }
