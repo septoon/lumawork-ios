@@ -363,14 +363,16 @@ final class SimpleOneRequestsStore {
 
     func fetchGroupClosedRequestsPage(
         page: Int,
-        perPage: Int
+        perPage: Int,
+        newestFirst: Bool = false
     ) async throws -> SimpleOnePagedRequestRecords {
         guard let authKey else { throw SimpleOneServiceError.missingCredentials }
         do {
             return try await service.fetchGroupClosedRequestsPage(
                 authKey: authKey,
                 page: page,
-                perPage: perPage
+                perPage: perPage,
+                newestFirst: newestFirst
             )
         } catch SimpleOneServiceError.unauthorized {
             signOut(clearUsername: false)

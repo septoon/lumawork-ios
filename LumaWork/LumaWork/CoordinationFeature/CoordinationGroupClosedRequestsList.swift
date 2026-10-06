@@ -51,17 +51,21 @@ nonisolated struct GroupClosedRequestsList: Sendable, Equatable {
         for item in items {
             titles[item.typeKey] = item.display.requestType.isEmpty
                 ? "Тип не указан" : item.display.requestType
-            guard let date = item.display.date,
-                  date >= yesterday, date < tomorrow,
-                  !excludedTypes.contains(item.typeKey),
+            guard !excludedTypes.contains(item.typeKey),
                   query.isEmpty || item.display.searchText.contains(query) else { continue }
+            let date = item.display.date
+            if query.isEmpty {
+                guard let date, date >= yesterday, date < tomorrow else { continue }
+            }
 
             if let last = result.days.indices.last, result.days[last].id == item.display.dayKey {
                 result.days[last].items.append(item)
             } else {
                 result.days.append(GroupClosedRequestDay(
                     id: item.display.dayKey,
-                    title: date >= today ? "Сегодня" : "Вчера",
+                    title: date.map { calendar.isDate($0, inSameDayAs: today) ? "Сегодня"
+                        : calendar.isDate($0, inSameDayAs: yesterday) ? "Вчера" : item.display.dayTitle }
+                        ?? item.display.dayTitle,
                     caption: item.display.dayCaption,
                     startIndex: result.count,
                     items: [item]

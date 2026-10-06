@@ -168,6 +168,8 @@ extension ClosedRequestsScreen {
     }
 
     func refreshClosedRequestsIncrementally() async {
+        store.errorMessage = nil
+        store.notice = nil
         do {
             try await store.waitForClosedRequestsSyncAvailability()
         } catch is CancellationError {
@@ -183,20 +185,10 @@ extension ClosedRequestsScreen {
         }
 
         _ = await synchronizeClosedRequestsAutomatically(
-            scope: .narrow,
+            scope: .wide,
             waitsForCurrentSync: true,
             reportsErrors: true
         )
-        guard store.errorMessage == nil else { return }
-
-        if let userID = simpleOneStore.currentUser?.sysID,
-           store.shouldRunWideClosedRequestsSync(userID: userID) {
-            _ = await synchronizeClosedRequestsAutomatically(
-                scope: .wide,
-                waitsForCurrentSync: true,
-                reportsErrors: true
-            )
-        }
     }
 
     func refreshClosedRequestsArchiveFromSimpleOne() async {
@@ -257,11 +249,11 @@ extension ClosedRequestsScreen {
     }
 
     var closedRequestsAutomaticSyncTaskID: String {
-        "\(simpleOneStore.isAuthorized)|\(simpleOneStore.currentUser?.sysID ?? "")"
+        "\(simpleOneStore.isAuthorized)|\(simpleOneStore.currentUser?.sysID ?? "")|\(scenePhase)"
     }
 
     func runClosedRequestsAutomaticSyncLoop() async {
-        guard simpleOneStore.isAuthorized else { return }
+        guard simpleOneStore.isAuthorized, scenePhase == .active else { return }
 
         while store.isLoadingSnapshot, !Task.isCancelled {
             do {
@@ -293,16 +285,15 @@ extension ClosedRequestsScreen {
                 }
             }
 
-            let changedCount = await synchronizeClosedRequestsAutomatically(scope: .narrow)
+            var changedCount = await synchronizeClosedRequestsAutomatically(scope: .narrow)
+            if let userID = simpleOneStore.currentUser?.sysID,
+               store.shouldRunWideClosedRequestsSync(userID: userID) {
+                changedCount += await synchronizeClosedRequestsAutomatically(scope: .wide)
+            }
             if changedCount > 0 {
                 closedRequestsNoChangeStreak = 0
             } else {
                 closedRequestsNoChangeStreak += 1
-            }
-
-            if let userID = simpleOneStore.currentUser?.sysID,
-               store.shouldRunWideClosedRequestsSync(userID: userID) {
-                _ = await synchronizeClosedRequestsAutomatically(scope: .wide)
             }
 
             let delay: UInt64

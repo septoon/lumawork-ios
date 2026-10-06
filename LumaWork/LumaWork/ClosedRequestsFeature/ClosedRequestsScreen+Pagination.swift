@@ -140,7 +140,7 @@ extension ClosedRequestsScreen {
 
     func refreshFilteredRecords() {
         let query = normalizedClosedSearchQuery
-        let dateRange = closedDateRange ?? (query.isEmpty ? automaticClosedDateRange : nil)
+        let dateRange = effectiveClosedDateRange
         filteredRecordsCache = searchEntries
             .filter { entry in
                 guard query.isEmpty || entry.searchText.contains(query) else { return false }
@@ -151,7 +151,7 @@ extension ClosedRequestsScreen {
     }
 
     var effectiveClosedDateRange: ClosedRange<Date>? {
-        closedDateRange ?? (normalizedClosedSearchQuery.isEmpty ? automaticClosedDateRange : nil)
+        normalizedClosedSearchQuery.isEmpty ? (closedDateRange ?? automaticClosedDateRange) : nil
     }
 
     var todayAndYesterdayClosedDateRange: ClosedRange<Date> {

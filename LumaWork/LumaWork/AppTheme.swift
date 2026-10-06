@@ -267,6 +267,7 @@ struct AppScreen<Content: View>: View {
     private let bottomContentPadding: CGFloat
     private let keyboardDismissMode: ScrollDismissesKeyboardMode
     private let sizeChangeScrollAnchor: UnitPoint?
+    private let scrollResetID: AnyHashable?
     private let onScrollDirectionChange: ((AppVerticalScrollDirection) -> Void)?
     private let onBottomProximityChange: ((Bool) -> Void)?
 
@@ -274,6 +275,7 @@ struct AppScreen<Content: View>: View {
         bottomContentPadding: CGFloat = 28,
         keyboardDismissMode: ScrollDismissesKeyboardMode = .automatic,
         sizeChangeScrollAnchor: UnitPoint? = nil,
+        scrollResetID: AnyHashable? = nil,
         onScrollDirectionChange: ((AppVerticalScrollDirection) -> Void)? = nil,
         onBottomProximityChange: ((Bool) -> Void)? = nil,
         @ViewBuilder content: @escaping () -> Content
@@ -281,6 +283,7 @@ struct AppScreen<Content: View>: View {
         self.bottomContentPadding = bottomContentPadding
         self.keyboardDismissMode = keyboardDismissMode
         self.sizeChangeScrollAnchor = sizeChangeScrollAnchor
+        self.scrollResetID = scrollResetID
         self.onScrollDirectionChange = onScrollDirectionChange
         self.onBottomProximityChange = onBottomProximityChange
         self.fixedTopContent = nil
@@ -291,6 +294,7 @@ struct AppScreen<Content: View>: View {
         bottomContentPadding: CGFloat = 28,
         keyboardDismissMode: ScrollDismissesKeyboardMode = .automatic,
         sizeChangeScrollAnchor: UnitPoint? = nil,
+        scrollResetID: AnyHashable? = nil,
         onScrollDirectionChange: ((AppVerticalScrollDirection) -> Void)? = nil,
         onBottomProximityChange: ((Bool) -> Void)? = nil,
         @ViewBuilder fixedTopContent: @escaping () -> FixedTopContent,
@@ -299,6 +303,7 @@ struct AppScreen<Content: View>: View {
         self.bottomContentPadding = bottomContentPadding
         self.keyboardDismissMode = keyboardDismissMode
         self.sizeChangeScrollAnchor = sizeChangeScrollAnchor
+        self.scrollResetID = scrollResetID
         self.onScrollDirectionChange = onScrollDirectionChange
         self.onBottomProximityChange = onBottomProximityChange
         self.fixedTopContent = { AnyView(fixedTopContent()) }
@@ -345,6 +350,7 @@ struct AppScreen<Content: View>: View {
             .appObserveVerticalScroll(isEnabled: onScrollDirectionChange != nil) { direction in
                 onScrollDirectionChange?(direction)
             }
+            .id(scrollResetID)
         }
     }
 

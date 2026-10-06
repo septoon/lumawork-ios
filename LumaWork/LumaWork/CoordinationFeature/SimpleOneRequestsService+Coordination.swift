@@ -4,10 +4,12 @@ nonisolated extension SimpleOneRequestsService {
     func fetchGroupClosedRequestsPage(
         authKey: String,
         page: Int,
-        perPage: Int
+        perPage: Int,
+        newestFirst: Bool = false
     ) async throws -> SimpleOnePagedRequestRecords {
-        try await fetchRequestsPage(
-            condition: "(company_location=171878330004108924^resolved_atNOTONopt:167653141215593053^stateNOT INon_hold@assigned@in_progress@escalated@returned_to_work@3@6@update_received)",
+        let order = newestFirst ? "^ORDERBYDESCsys_updated_at^ORDERBYDESCsys_id" : ""
+        return try await fetchRequestsPage(
+            condition: "(company_location=171878330004108924^resolved_atNOTONopt:167653141215593053^stateNOT INon_hold@assigned@in_progress@escalated@returned_to_work@3@6@update_received)\(order)",
             source: .closed,
             authKey: authKey,
             page: page,

@@ -343,7 +343,7 @@ final class ClosedRequestsStore {
         guard let state = snapshot?.syncState,
               state.userID == userID,
               state.isWideBaselineTrusted else {
-            return false
+            return true
         }
         if ClosedRequestsArchiveQuery.requiresWideRestart(
             storedRevision: state.wideConditionRevision
@@ -351,7 +351,7 @@ final class ClosedRequestsStore {
             return true
         }
         guard let lastSuccess = state.lastWideSuccessAt else { return true }
-        return now.timeIntervalSince(lastSuccess) >= 6 * 60 * 60
+        return now.timeIntervalSince(lastSuccess) >= 60
     }
 
     private func loadSnapshot() async {
@@ -480,6 +480,7 @@ final class ClosedRequestsStore {
             state.wideWatermark = batch.watermark ?? state.wideWatermark
             state.wideConditionRevision = ClosedRequestsArchiveQuery.revision
             state.lastWideSuccessAt = now
+            state.isWideBaselineTrusted = true
         }
 
         let updatedSnapshot = ClosedRequestsSnapshot(

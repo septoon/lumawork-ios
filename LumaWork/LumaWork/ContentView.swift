@@ -101,7 +101,7 @@ struct ContentView: View {
             )
         }
         .task(id: "\(stores.simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: stores.simpleOneStore))") {
-            stores.groupClosedRequestsStore.synchronizeSession(simpleOneStore: stores.simpleOneStore)
+            await stores.groupClosedRequestsStore.loadCacheIfNeeded(simpleOneStore: stores.simpleOneStore)
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {

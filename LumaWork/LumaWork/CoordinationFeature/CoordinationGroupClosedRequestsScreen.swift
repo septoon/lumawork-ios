@@ -14,6 +14,7 @@ struct CoordinationGroupClosedRequestsScreen: View {
     let lumaWorkAuthToken: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("CoordinationGroupClosedRequests.excludedTypes") private var excludedTypesData = Data()
     @State private var errorMessage: String?
     @State private var searchText = ""
@@ -23,8 +24,25 @@ struct CoordinationGroupClosedRequestsScreen: View {
     @State private var selectedRequest: SimpleOneRequestRecord?
     @State private var loadingRequestID: String?
 
+    init(
+        simpleOneStore: SimpleOneRequestsStore,
+        store: CoordinationGroupClosedRequestsStore,
+        lumaWorkAuthToken: String?
+    ) {
+        self.simpleOneStore = simpleOneStore
+        self.store = store
+        self.lumaWorkAuthToken = lumaWorkAuthToken
+        _list = State(initialValue: GroupClosedRequestsList.build(
+            items: store.items, query: "", excludedTypes: excludedTypes, now: referenceDate
+        ))
+    }
+
     private var excludedTypes: Set<String> {
         (try? JSONDecoder().decode(Set<String>.self, from: excludedTypesData)) ?? []
+    }
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var filterID: GroupClosedRequestsFilterID {
@@ -56,7 +74,7 @@ struct CoordinationGroupClosedRequestsScreen: View {
                             .font(.subheadline)
                             .foregroundStyle(AppTheme.mutedTint)
                         Spacer(minLength: 4)
-                        Label("Сегодня и вчера", systemImage: "calendar")
+                        Label(isSearching ? "Весь архив" : "Сегодня и вчера", systemImage: "calendar")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppTheme.primaryTint)
                             .padding(.horizontal, 10)
@@ -90,6 +108,8 @@ struct CoordinationGroupClosedRequestsScreen: View {
             }
             if !simpleOneStore.isAuthorized {
                 EmptyView()
+            } else if !store.didLoadCache {
+                EmptyView()
             } else if store.items.isEmpty, store.isLoading {
                 AppLoadingView(title: "Загружаю закрытые заявки группы")
             } else if list.days.isEmpty {
@@ -97,11 +117,12 @@ struct CoordinationGroupClosedRequestsScreen: View {
                     title: "Заявок нет",
                     message: store.items.isEmpty
                         ? "SimpleOne не вернул закрытые заявки группы."
+                        : isSearching ? "Поиск выполнен по всему архиву. Измените запрос или фильтр типов."
                         : "За сегодня и вчера нет заявок с выбранными типами.",
                     systemName: "checklist"
                 )
             } else {
-                VStack(alignment: .leading, spacing: 16) {
+                LazyVStack(alignment: .leading, spacing: 16) {
                     ForEach(list.days) { day in
                         LazyVStack(alignment: .leading, spacing: 16) {
                             ForEach(Array(day.items.enumerated()), id: \.element.id) { index, item in
@@ -152,14 +173,21 @@ struct CoordinationGroupClosedRequestsScreen: View {
                 .accessibilityLabel("Фильтр по типам заявок")
             }
         }
-        .refreshable { await store.refresh(simpleOneStore: simpleOneStore) }
+        .refreshable { await store.refresh(simpleOneStore: simpleOneStore, forceFull: true) }
         .task(id: filterID) { await rebuildList() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
             referenceDate = Date()
         }
-        .task(id: "\(simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: simpleOneStore))") {
+        .task(id: "\(simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: simpleOneStore))|\(scenePhase)") {
             if simpleOneStore.isAuthorized {
+                guard scenePhase == .active else { return }
+                referenceDate = Date()
                 await store.refresh(simpleOneStore: simpleOneStore)
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(60)) }
+                    catch { return }
+                    await store.refresh(simpleOneStore: simpleOneStore)
+                }
             } else {
                 store.synchronizeSession(simpleOneStore: simpleOneStore)
                 list = GroupClosedRequestsList()

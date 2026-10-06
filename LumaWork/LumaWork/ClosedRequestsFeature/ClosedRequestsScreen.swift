@@ -2,6 +2,14 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+private struct RequestsScrollResetID: Hashable {
+    let mode: RequestsViewMode
+    let query: String
+    let page: Int
+    let activeStatus: String?
+    let closedDateRange: ClosedRange<Date>?
+}
+
 struct ClosedRequestsScreen: View {
     let store: ClosedRequestsStore
     let sessionStore: AppSessionStore
@@ -11,6 +19,7 @@ struct ClosedRequestsScreen: View {
     let onRequestedActiveRequestHandled: (String) -> Void
 
     @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @Environment(\.scenePhase) var scenePhase
     @AppStorage("ClosedRequestsScreen.activeStatusFilter")
     var activeStatusFilterRaw = ActiveRequestsStatusFilter.available.rawValue
 
@@ -72,7 +81,7 @@ struct ClosedRequestsScreen: View {
     }
 
     var body: some View {
-        AppScreen(fixedTopContent: {
+        AppScreen(scrollResetID: scrollResetID, fixedTopContent: {
             if simpleOneStore.isAuthorized {
                 switch requestsMode {
                 case .active:
@@ -113,7 +122,11 @@ struct ClosedRequestsScreen: View {
         .scrollBounceBehavior(.always, axes: .vertical)
         .refreshable {
             if simpleOneStore.isAuthorized {
-                await refreshSimpleOneRequests()
+                if requestsMode == .closed {
+                    await refreshClosedRequestsIncrementally()
+                } else {
+                    await refreshSimpleOneRequests()
+                }
             }
         }
         .toolbar {
@@ -381,6 +394,16 @@ struct ClosedRequestsScreen: View {
         ) {
             requestDetailDestinationView
         }
+    }
+
+    private var scrollResetID: RequestsScrollResetID {
+        RequestsScrollResetID(
+            mode: requestsMode,
+            query: requestsMode == .closed ? normalizedClosedSearchQuery : normalizedSearchQuery,
+            page: safeCurrentPage,
+            activeStatus: requestsMode == .active ? activeStatusFilterRaw : nil,
+            closedDateRange: requestsMode == .closed ? closedDateRange : nil
+        )
     }
 
     @ViewBuilder
@@ -662,9 +685,7 @@ private extension ClosedRequestsScreen {
 
     var closedRequestsEmptyMessage: String {
         if !normalizedClosedSearchQuery.isEmpty {
-            return closedDateRange == nil
-                ? "Поиск выполнен по всему архиву. Измените запрос."
-                : "Измените запрос или выбранный период."
+            return "Поиск выполнен по всему архиву. Измените запрос."
         }
         return "Выберите другой период или воспользуйтесь поиском по всему архиву."
     }
@@ -695,6 +716,7 @@ private extension ClosedRequestsScreen {
     }
 
     var closedRequestsDateRangeTitle: String {
+        if !normalizedClosedSearchQuery.isEmpty { return "Весь архив" }
         guard let range = effectiveClosedDateRange else { return "Выбрать дату" }
         if closedDateRange == nil,
            range.lowerBound == todayAndYesterdayClosedDateRange.lowerBound,
