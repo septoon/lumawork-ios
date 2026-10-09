@@ -47,3 +47,6 @@ deploy/
 docs/
 Design/
 scripts/
+
+/DEPTHSTACK.md
+/Info.plist
