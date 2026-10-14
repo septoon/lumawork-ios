@@ -34,6 +34,8 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
     case manageSite = "site.manage"
     case viewEngineerFiles = "engineerFiles.view"
     case manageEngineerFiles = "engineerFiles.manage"
+    case viewEvotorDrivers = "evotorDrivers.view"
+    case manageEvotorDrivers = "evotorDrivers.manage"
 
     var id: String { rawValue }
 
@@ -60,6 +62,8 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
         case .manageSite: "Управление сайтом"
         case .viewEngineerFiles: "Просмотр файлов Инженера"
         case .manageEngineerFiles: "Управление файлами Инженера"
+        case .viewEvotorDrivers: "Просмотр драйверов Эвотор"
+        case .manageEvotorDrivers: "Изменение ссылок драйверов Эвотор"
         }
     }
 
@@ -86,6 +90,8 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
         case .manageSite: "Доступность, тексты, скриншоты и их порядок"
         case .viewEngineerFiles: "Wiki snapshots, IPA-релизы и source.json"
         case .manageEngineerFiles: "Загрузка, замена, переименование, удаление и редактор source.json"
+        case .viewEvotorDrivers: "Просмотр общих ссылок Aisino и PAX"
+        case .manageEvotorDrivers: "Добавление и редактирование общих ссылок драйверов"
         }
     }
 
@@ -98,6 +104,7 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
         case .viewAssistant, .manageAssistant: .assistant
         case .viewSite, .manageSite: .site
         case .viewEngineerFiles, .manageEngineerFiles: .engineerFiles
+        case .viewEvotorDrivers, .manageEvotorDrivers: .evotorDrivers
         }
     }
 }
@@ -110,6 +117,7 @@ enum AdminPermissionGroup: String, CaseIterable, Identifiable {
     case assistant
     case site
     case engineerFiles
+    case evotorDrivers
 
     var id: String { rawValue }
     var title: String {
@@ -121,6 +129,7 @@ enum AdminPermissionGroup: String, CaseIterable, Identifiable {
         case .assistant: "ИИ-помощник"
         case .site: "Сайт"
         case .engineerFiles: "Файлы Инженера"
+        case .evotorDrivers: "Драйвер Эвотор"
         }
     }
 }

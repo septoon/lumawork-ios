@@ -433,6 +433,7 @@ struct AdminUsersScreen: View {
             || can(.viewAssistant)
             || can(.viewSite)
             || can(.viewEngineerFiles)
+            || can(.viewEvotorDrivers)
     }
 
     private var filteredUsers: [AdminUserRecord] {
@@ -511,8 +512,20 @@ struct AdminUsersScreen: View {
                 }
             }
 
-            if can(.viewUsers) || can(.viewFeedback) || can(.viewImages) || can(.viewSite) {
+            if can(.viewUsers) || can(.viewFeedback) || can(.viewImages) || can(.viewSite) || can(.viewEvotorDrivers) {
                 Section("Управление") {
+                    if can(.viewEvotorDrivers) {
+                        NavigationLink {
+                            AdminEvotorDriversScreen(canManage: can(.manageEvotorDrivers))
+                        } label: {
+                            AdminNavigationRow(
+                                title: "Драйвер Эвотор",
+                                subtitle: "Ссылки драйверов Aisino и PAX",
+                                systemImage: "link",
+                                tint: AppTheme.primaryTint
+                            )
+                        }
+                    }
                     if can(.viewSite) {
                         NavigationLink {
                             AdminSiteScreen(

@@ -47,6 +47,7 @@ struct ContentView: View {
             selectedScreen
         }
         .environment(\.appIsOfflineMode, sessionStore.isOfflineMode)
+        .environment(stores.evotorDriverLinksStore)
         .tint(AppTheme.primaryTint)
         .background(KeyboardDismissOnTapInstaller())
         .onChange(of: selectedSection) { oldValue, newValue in

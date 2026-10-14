@@ -92,6 +92,10 @@ struct ActiveSimpleOneRequestDetailScreen: View {
                         }
                     }
 
+                    if data.shouldShowEvotorDrivers {
+                        EvotorDriversCard()
+                    }
+
                     if let chatQuestionsNotice {
                         AppNoticeBanner(
                             text: chatQuestionsNotice,

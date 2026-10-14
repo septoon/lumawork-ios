@@ -298,8 +298,16 @@ struct ActiveSimpleOneRequestData {
     private var installType: String {
         localizedTerminalType(firstMeaningful([
             infoValue("Тип устанавливаемого ТО"),
-            tableValue("Тип устанавливаемого ТО")
+            tableValue("Тип устанавливаемого ТО"),
+            infoValue("Тип терминала"),
+            tableValue("Тип терминала"),
+            infoValue("Тип терминала:"),
+            tableValue("Тип терминала:")
         ]))
+    }
+
+    var shouldShowEvotorDrivers: Bool {
+        installType.trimmingCharacters(in: .whitespacesAndNewlines) == "intel_pin"
     }
 
     private var installedSerial: String {
@@ -492,6 +500,7 @@ struct ActiveSimpleOneRequestData {
             "Модель POS",
             "Модель терминала",
             "Тип устанавливаемого ТО",
+            "Тип терминала",
             "Согласованная дата и время проведения работ",
             "Согласованная дата и время предоставления доступа",
             "Тип заявки",

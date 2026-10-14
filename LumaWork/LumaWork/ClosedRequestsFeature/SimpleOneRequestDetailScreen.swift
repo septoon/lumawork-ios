@@ -22,6 +22,9 @@ struct SimpleOneRequestDetailScreen: View {
         if isWarehouseRequest(record) {
             AppScreen(bottomContentPadding: 0) {
                 LongTextCard(title: "Информация", text: nilIfEmpty(warehouseInformationBlock(record)))
+                if ActiveSimpleOneRequestData(record: record).shouldShowEvotorDrivers {
+                    EvotorDriversCard()
+                }
             }
             .navigationTitle("Заявка")
             .navigationBarTitleDisplayMode(.inline)
@@ -121,6 +124,10 @@ struct SimpleOneRequestDetailScreen: View {
                         AppStatRow(title: field.title, value: field.value)
                     }
                 }
+            }
+
+            if ActiveSimpleOneRequestData(record: record).shouldShowEvotorDrivers {
+                EvotorDriversCard()
             }
 
             if !record.engineerComment.isEmpty {

@@ -26,6 +26,7 @@ final class AppDataStores {
     let coordinationStore: CoordinationStore
     let groupClosedRequestsStore: CoordinationGroupClosedRequestsStore
     let adminUsersStore: AdminUsersStore
+    let evotorDriverLinksStore: EvotorDriverLinksStore
     let feedbackStore: FeedbackStore
     let workDocumentsStore: WorkDocumentsStore
     let navigationVisibilityStore: AppNavigationVisibilityStore
@@ -108,6 +109,7 @@ final class AppDataStores {
         coordinationStore = CoordinationStore(cacheID: userID)
         groupClosedRequestsStore = CoordinationGroupClosedRequestsStore(cacheID: userID)
         adminUsersStore = AdminUsersStore(token: authToken, cacheID: userID)
+        evotorDriverLinksStore = EvotorDriverLinksStore(config: config, token: authToken, cacheID: userID)
         feedbackStore = FeedbackStore(
             config: config,
             token: authToken,
