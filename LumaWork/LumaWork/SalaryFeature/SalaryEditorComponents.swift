@@ -9,6 +9,8 @@ struct SalaryDraft: Hashable {
     var amount = ""
     var kind = SalaryPaymentKind.advance
     var comment = ""
+    var vacationStartDate = ""
+    var vacationEndDate = ""
 
     init() {}
 
@@ -20,6 +22,8 @@ struct SalaryDraft: Hashable {
         amount = String(entry.netPaymentAmount)
         kind = entry.paymentKind
         comment = entry.comment ?? ""
+        vacationStartDate = entry.vacationStartDate ?? ""
+        vacationEndDate = entry.vacationEndDate ?? ""
     }
 
     var usesNetPaymentMode: Bool {
@@ -74,6 +78,16 @@ struct SalaryEditorView: View {
 
             SalaryPaymentKindPicker(selection: $draft.kind)
 
+            if draft.kind == .vacation {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Период отпуска")
+                        .font(.headline.weight(.medium))
+                        .foregroundStyle(AppTheme.ink)
+                    SalaryDateField(title: "Начало отпуска", text: $draft.vacationStartDate)
+                    SalaryDateField(title: "Окончание отпуска", text: $draft.vacationEndDate)
+                }
+            }
+
             if draft.usesNetPaymentMode {
                 SalaryField(title: "Выплата на руки", text: $draft.amount, placeholder: "0.00", kind: .decimal)
             } else {
@@ -110,6 +124,13 @@ struct SalaryEditorView: View {
     private func validate() -> String? {
         if draft.date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return "Укажите дату выплаты."
+        }
+
+        if draft.kind == .vacation,
+           let error = SalaryEntry.vacationPeriodValidationError(
+               start: draft.vacationStartDate, end: draft.vacationEndDate
+           ) {
+            return error
         }
 
         if draft.usesNetPaymentMode {

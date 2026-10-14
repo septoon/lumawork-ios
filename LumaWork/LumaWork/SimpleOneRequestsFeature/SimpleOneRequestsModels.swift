@@ -141,7 +141,7 @@ extension SimpleOneRequestRecord {
         return "\(prefix) \(max(minutes, 1)) мин."
     }
 
-    private static func parseSimpleOneDate(_ raw: String) -> Date? {
+    static func parseSimpleOneDate(_ raw: String) -> Date? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -167,6 +167,9 @@ extension SimpleOneRequestRecord {
     ].map { format in
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        // API timestamps are UTC; localized SO/XLSX dates already contain local time.
+        formatter.timeZone = format.hasPrefix("yyyy-") ? TimeZone(secondsFromGMT: 0) : .current
         formatter.dateFormat = format
         return formatter
     }

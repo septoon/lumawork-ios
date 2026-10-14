@@ -477,6 +477,13 @@ struct SalaryScreen: View {
                 )
                 Divider()
             }
+            if entry.paymentKind == .vacation,
+               let start = entry.vacationStartDate, let end = entry.vacationEndDate {
+                AppStatRow(
+                    title: "Период отпуска",
+                    value: "\(AppFormatting.shortDate(start)) — \(AppFormatting.shortDate(end))"
+                )
+            }
             if let comment = entry.comment, !comment.isEmpty {
                 AppStatRow(title: "Комментарий", value: comment)
             }
@@ -507,7 +514,9 @@ struct SalaryScreen: View {
                     periodMonth: isNetPayment ? draft.normalizedPeriodMonth : nil,
                     amount: isNetPayment ? amount : nil,
                     kind: draft.kind,
-                    comment: draft.kind == .other ? draft.normalizedComment : nil
+                    comment: draft.kind == .other ? draft.normalizedComment : nil,
+                    vacationStartDate: draft.kind == .vacation ? draft.vacationStartDate : nil,
+                    vacationEndDate: draft.kind == .vacation ? draft.vacationEndDate : nil
                 )
                 if await store.save(editing: editingEntry, input: input) {
                     selectedYear = affectedYear ?? selectedYear

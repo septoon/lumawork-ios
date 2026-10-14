@@ -84,9 +84,27 @@ struct SalaryEntry: Codable, Hashable {
     var amount: Double?
     var kind: SalaryPaymentKind?
     var comment: String?
+    var vacationStartDate: String? = nil
+    var vacationEndDate: String? = nil
 
     var stableID: String {
-        id ?? "\(date)|\(baseSalary)|\(weekendPay)|\(periodMonth ?? "")|\(amount ?? 0)|\(kind?.rawValue ?? "")|\(comment ?? "")"
+        id ?? "\(date)|\(baseSalary)|\(weekendPay)|\(periodMonth ?? "")|\(amount ?? 0)|\(kind?.rawValue ?? "")|\(comment ?? "")|\(vacationStartDate ?? "")|\(vacationEndDate ?? "")"
+    }
+
+    static func vacationPeriodValidationError(start: String?, end: String?) -> String? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.isLenient = false
+        guard let start, let end,
+              let startDate = formatter.date(from: start),
+              let endDate = formatter.date(from: end),
+              formatter.string(from: startDate) == start,
+              formatter.string(from: endDate) == end else {
+            return "Укажите начало и окончание отпуска."
+        }
+        return startDate <= endDate ? nil : "Окончание отпуска не может быть раньше начала."
     }
 }
 
@@ -98,6 +116,8 @@ struct SalaryEntryInput {
     var amount: Double?
     var kind: SalaryPaymentKind?
     var comment: String?
+    var vacationStartDate: String? = nil
+    var vacationEndDate: String? = nil
 }
 
 struct SalaryMonth: Codable, Hashable {
@@ -110,6 +130,7 @@ enum SalaryPaymentKind: String, CaseIterable, Codable, Hashable {
     case salary
     case weekend
     case gsm
+    case vacation
     case other
 
     var title: String {
@@ -122,6 +143,8 @@ enum SalaryPaymentKind: String, CaseIterable, Codable, Hashable {
             return "Работа в выходной"
         case .gsm:
             return "Компенсация ГСМ"
+        case .vacation:
+            return "Отпускные"
         case .other:
             return "Другое"
         }

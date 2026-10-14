@@ -1359,7 +1359,18 @@ private struct AppSidebarSettingsPlaceholder: View {
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(.white)
             .frame(width: 30, height: 30)
-            .background(tint, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(tint.gradient)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(LinearGradient(
+                                colors: [.white.opacity(0.18), .clear, .black.opacity(0.06)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ))
+                    }
+            }
             .accessibilityHidden(true)
     }
 }

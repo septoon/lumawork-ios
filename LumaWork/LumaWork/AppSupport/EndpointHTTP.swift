@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import UIKit
 
 enum AppServiceError: LocalizedError {
     case message(String)
@@ -39,6 +40,37 @@ enum AppBuildIdentity {
     static func apply(to request: inout URLRequest) {
         request.setValue(version, forHTTPHeaderField: "X-LumaWork-Version")
         request.setValue(build, forHTTPHeaderField: "X-LumaWork-Build")
+    }
+}
+
+enum AppDeviceIdentity {
+    private static let deviceID: String = {
+        if let vendorID = UIDevice.current.identifierForVendor {
+            return vendorID.uuidString
+        }
+        let key = "lumawork.app-device-id"
+        if let stored = UserDefaults.standard.string(forKey: key), UUID(uuidString: stored) != nil {
+            return stored
+        }
+        let value = UUID().uuidString
+        UserDefaults.standard.set(value, forKey: key)
+        return value
+    }()
+
+    private static let deviceInfo = FeedbackDeviceInfo.current
+
+    static func apply(to request: inout URLRequest) {
+        request.setValue(deviceID, forHTTPHeaderField: "X-LumaWork-Device-ID")
+        request.setValue(
+            ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? deviceInfo.deviceModel,
+            forHTTPHeaderField: "X-LumaWork-Device-Model"
+        )
+        request.setValue(deviceInfo.osVersion, forHTTPHeaderField: "X-LumaWork-Device-OS")
+        #if targetEnvironment(simulator)
+        request.setValue("iOS Simulator", forHTTPHeaderField: "X-LumaWork-Device-Platform")
+        #else
+        request.setValue("iOS", forHTTPHeaderField: "X-LumaWork-Device-Platform")
+        #endif
     }
 }
 

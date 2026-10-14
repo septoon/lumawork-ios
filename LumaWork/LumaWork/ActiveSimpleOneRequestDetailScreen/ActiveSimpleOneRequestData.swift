@@ -614,15 +614,7 @@ struct ActiveSimpleOneRequestData {
     }
 
     private func parseDate(_ raw: String) -> Date? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        for formatter in Self.inputDateFormatters {
-            if let date = formatter.date(from: trimmed) {
-                return date
-            }
-        }
-        return nil
+        SimpleOneRequestRecord.parseSimpleOneDate(raw)
     }
 
     private func remainingText(for interval: TimeInterval) -> String {
@@ -630,18 +622,6 @@ struct ActiveSimpleOneRequestData {
         let hours = totalMinutes / 60
         let minutes = totalMinutes % 60
         return "\(hours) ч. \(minutes) м."
-    }
-
-    private static let inputDateFormatters: [DateFormatter] = [
-        "yyyy-MM-dd HH:mm:ss",
-        "yyyy-MM-dd HH:mm",
-        "dd.MM.yyyy HH:mm:ss",
-        "dd.MM.yyyy HH:mm"
-    ].map { format in
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = format
-        return formatter
     }
 
     private static let outputFormatters: [String: DateFormatter] = [

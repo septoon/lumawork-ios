@@ -141,6 +141,10 @@ struct ActiveRequestValueBlock: View {
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityHint(accessibilityHint)
+            .serialNumberBarcode(
+                value: value,
+                isEnabled: SerialNumberBarcodeSelection.isSerialNumberField(title)
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

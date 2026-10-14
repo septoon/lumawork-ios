@@ -80,6 +80,10 @@ struct InfoFieldBlock: View {
                 weight: .semibold
             )
             .frame(maxWidth: .infinity, alignment: .leading)
+            .serialNumberBarcode(
+                value: field.value,
+                isEnabled: SerialNumberBarcodeSelection.isSerialNumberField(field.key)
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -107,6 +111,10 @@ struct ActiveTableFieldBlock: View {
                 weight: .semibold
             )
             .frame(maxWidth: .infinity, alignment: .leading)
+            .serialNumberBarcode(
+                value: value,
+                isEnabled: SerialNumberBarcodeSelection.isSerialNumberField(field.key)
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -594,14 +594,7 @@ struct SimpleOneRequestDetailScreen: View {
     }
 
     private func parseDate(_ raw: String) -> Date? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        for formatter in Self.dateParsingFormatters {
-            if let date = formatter.date(from: trimmed) {
-                return date
-            }
-        }
-        return nil
+        SimpleOneRequestRecord.parseSimpleOneDate(raw)
     }
 
     private func localizedRequestType(_ raw: String) -> String {
@@ -626,15 +619,6 @@ struct SimpleOneRequestDetailScreen: View {
     private func normalizedAddress(_ raw: String) -> String {
         raw.normalizedAddressStartingFromAlushta()
     }
-
-    private static let dateParsingFormatters: [DateFormatter] = {
-        ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "dd.MM.yyyy HH:mm:ss", "dd.MM.yyyy HH:mm"].map { format in
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = format
-            return formatter
-        }
-    }()
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()

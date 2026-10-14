@@ -15,6 +15,7 @@ struct AdminUserRecord: Codable, Identifiable, Hashable {
     var appVersion: String?
     var appBuild: String?
     var appVersionSeenAt: Date?
+    var devices: [AdminUserDeviceRecord]?
     var isBlocked: Bool
     var blockedUntil: Date?
 
@@ -49,6 +50,40 @@ struct AdminUserRecord: Codable, Identifiable, Hashable {
         if let version { return version }
         if let build { return "Сборка \(build)" }
         return "Не определена"
+    }
+}
+
+struct AdminUserDeviceRecord: Codable, Identifiable, Hashable {
+    let id: String
+    let model: String
+    let osVersion: String
+    let platform: String
+    let appVersion: String?
+    let appBuild: String?
+    let firstSeenAt: Date?
+    let lastSeenAt: Date?
+
+    var appVersionDisplay: String {
+        if let version = UserProfileData.clean(appVersion), let build = UserProfileData.clean(appBuild) {
+            return "\(version) (\(build))"
+        }
+        if let version = UserProfileData.clean(appVersion) { return version }
+        if let build = UserProfileData.clean(appBuild) { return "Сборка \(build)" }
+        return "Не определена"
+    }
+
+    init?(raw: [String: Any]) {
+        let id = adminString(raw, keys: ["id"])
+        let model = adminString(raw, keys: ["model"])
+        guard !id.isEmpty, !model.isEmpty else { return nil }
+        self.id = id
+        self.model = model
+        osVersion = adminString(raw, keys: ["osVersion"])
+        platform = adminString(raw, keys: ["platform"])
+        appVersion = UserProfileData.clean(adminString(raw, keys: ["appVersion"]))
+        appBuild = UserProfileData.clean(adminString(raw, keys: ["appBuild"]))
+        firstSeenAt = adminDate(raw, keys: ["firstSeenAt"])
+        lastSeenAt = adminDate(raw, keys: ["lastSeenAt"])
     }
 }
 
@@ -215,7 +250,14 @@ final class AdminUsersStore {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            users = try await api.fetchUsers(token: token)
+            let previousDevices = Dictionary(uniqueKeysWithValues: users.compactMap { user in
+                user.devices.map { (user.id, $0) }
+            })
+            users = try await api.fetchUsers(token: token).map { user in
+                var updated = user
+                updated.devices = updated.devices ?? previousDevices[user.id]
+                return updated
+            }
             persist()
         } catch {
             errorMessage = appUserFacingErrorMessage(error)
@@ -224,10 +266,12 @@ final class AdminUsersStore {
 
     func refreshUser(_ user: AdminUserRecord) async -> AdminUserRecord {
         guard let token, !token.isEmpty else { return user }
+        errorMessage = nil
         do {
             let updated = try await api.fetchUser(id: user.id, token: token)
-            replace(updated)
-            return updated
+            return replace(updated)
+        } catch is CancellationError {
+            return user
         } catch {
             errorMessage = appUserFacingErrorMessage(error)
             return user
@@ -327,22 +371,26 @@ final class AdminUsersStore {
         defer { isLoading = false }
         do {
             let updated = try await action(token)
-            replace(updated)
+            let merged = replace(updated)
             notice = successNotice
-            return updated
+            return merged
         } catch {
             errorMessage = appUserFacingErrorMessage(error)
             return nil
         }
     }
 
-    private func replace(_ user: AdminUserRecord) {
+    @discardableResult
+    private func replace(_ user: AdminUserRecord) -> AdminUserRecord {
+        var updated = user
         if let index = users.firstIndex(where: { $0.id == user.id }) {
-            users[index] = user
+            updated.devices = updated.devices ?? users[index].devices
+            users[index] = updated
         } else {
-            users.append(user)
+            users.append(updated)
         }
         persist()
+        return updated
     }
 
     private func persist() {
@@ -1115,6 +1163,7 @@ private struct AdminUserDetailScreen: View {
     @State private var user: AdminUserRecord
     @State private var customBlockUntil = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
     @State private var sheet: AdminUserSheetDestination?
+    @State private var isRefreshingUser = true
 
     let store: AdminUsersStore
     let currentUserID: String?
@@ -1158,6 +1207,26 @@ private struct AdminUserDetailScreen: View {
             }
 
             AdminInfoCard(rows: userInfoRows)
+
+            AppSectionHeader(title: "Устройства", caption: "Запуски приложения под этим аккаунтом")
+            if let devices = user.devices, !devices.isEmpty {
+                ForEach(devices) { device in
+                    AdminInfoCard(rows: deviceInfoRows(device))
+                }
+            } else if isRefreshingUser {
+                AppCard {
+                    ProgressView("Загружаются сведения об устройствах")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                AppCard {
+                    Text(store.errorMessage == nil
+                         ? "Сведения об устройствах ещё не поступали. Они появятся после запуска обновлённого приложения."
+                         : "Не удалось загрузить сведения об устройствах.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.mutedTint)
+                }
+            }
 
             if !userProfileRows.isEmpty {
                 AppSectionHeader(title: "Профиль", caption: "Данные, доступные для этого пользователя")
@@ -1238,11 +1307,11 @@ private struct AdminUserDetailScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    Task { user = await store.refreshUser(user) }
+                    Task { await refreshUser() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .disabled(store.isLoading)
+                .disabled(store.isLoading || isRefreshingUser)
                 .accessibilityLabel("Обновить пользователя")
             }
         }
@@ -1268,11 +1337,28 @@ private struct AdminUserDetailScreen: View {
         .onChange(of: store.users) { _, users in
             if let updated = users.first(where: { $0.id == user.id }) { user = updated }
         }
-        .task { user = await store.refreshUser(user) }
+        .task { await refreshUser() }
     }
 
     private var isMutableTarget: Bool {
         user.id != currentUserID && !user.isProtectedAdmin
+    }
+
+    private func refreshUser() async {
+        isRefreshingUser = true
+        defer { isRefreshingUser = false }
+        user = await store.refreshUser(user)
+    }
+
+    private func deviceInfoRows(_ device: AdminUserDeviceRecord) -> [AdminInfoRow] {
+        [
+            AdminInfoRow(title: "Модель", value: device.model),
+            AdminInfoRow(title: "Платформа", value: device.platform),
+            AdminInfoRow(title: "ОС", value: device.osVersion),
+            AdminInfoRow(title: "Версия приложения", value: device.appVersionDisplay),
+            adminFormattedDate(device.firstSeenAt).map { AdminInfoRow(title: "Первый запуск", value: $0) },
+            adminFormattedDate(device.lastSeenAt).map { AdminInfoRow(title: "Последний запуск", value: $0) }
+        ].compactMap { $0 }
     }
     private var canManageAccess: Bool { isMutableTarget && permissions.contains(.manageUserPermissions) }
     private var canNotify: Bool { permissions.contains(.notifyUsers) }
@@ -1707,6 +1793,7 @@ private extension AdminUserRecord {
         appVersion = adminString(raw, keys: ["appVersion", "app_version", "lastAppVersion"])
         appBuild = adminString(raw, keys: ["appBuild", "app_build", "lastAppBuild"])
         appVersionSeenAt = adminDate(raw, keys: ["appVersionSeenAt", "app_version_seen_at", "lastAppSeenAt"])
+        devices = (raw["devices"] as? [[String: Any]])?.compactMap { AdminUserDeviceRecord(raw: $0) }
         isBlocked = adminBool(raw, keys: ["isBlocked", "is_blocked", "blocked", "disabled"])
         blockedUntil = adminDate(raw, keys: ["blockedUntil", "blocked_until", "blockedTo", "blocked_to"])
     }

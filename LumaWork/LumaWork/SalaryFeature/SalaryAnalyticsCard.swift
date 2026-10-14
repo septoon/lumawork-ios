@@ -273,6 +273,8 @@ private extension SalaryPaymentKind {
             return .blue
         case .gsm:
             return .purple
+        case .vacation:
+            return .orange
         case .other:
             return .pink
         }

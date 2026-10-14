@@ -362,6 +362,9 @@ struct LumaWorkAuthAPI {
         request.timeoutInterval = timeoutInterval
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         AppBuildIdentity.apply(to: &request)
+        if path == "/me" || path == "/auth/verify-code" {
+            AppDeviceIdentity.apply(to: &request)
+        }
 
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

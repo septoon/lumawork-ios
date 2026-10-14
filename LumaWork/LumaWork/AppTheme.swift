@@ -537,6 +537,10 @@ struct AppStatRow: View {
                 textAlignment: .right
             )
             .frame(maxWidth: .infinity, alignment: .trailing)
+            .serialNumberBarcode(
+                value: value,
+                isEnabled: SerialNumberBarcodeSelection.isSerialNumberField(title)
+            )
         }
     }
 }

@@ -105,7 +105,9 @@ struct SalaryService {
             periodMonth: normalizedEntry.periodMonth,
             amount: normalizedEntry.amount,
             kind: normalizedEntry.kind,
-            comment: normalizedEntry.comment
+            comment: normalizedEntry.comment,
+            vacationStartDate: normalizedEntry.vacationStartDate,
+            vacationEndDate: normalizedEntry.vacationEndDate
         )
 
         guard let authToken, let url = v2URL(path: "/api/v2/salary") else {
@@ -129,7 +131,9 @@ struct SalaryService {
             periodMonth: updatedEntry.periodMonth,
             amount: updatedEntry.amount,
             kind: updatedEntry.kind,
-            comment: updatedEntry.comment
+            comment: updatedEntry.comment,
+            vacationStartDate: updatedEntry.vacationStartDate,
+            vacationEndDate: updatedEntry.vacationEndDate
         )
 
         guard let targetID = target.id, !targetID.isEmpty else {
@@ -157,8 +161,12 @@ struct SalaryService {
 
     private func normalizeEntry(_ raw: Any, fallbackMonth: String? = nil) -> SalaryEntry {
         let dictionary = dictionaryValue(raw) ?? [:]
+        // v2 persists extension fields in payload, including kinds absent from its DB enum.
+        let payload = dictionaryValue(dictionary["payload"]) ?? [:]
         let primaryID = stringValue(dictionary["id"]).nilIfEmpty
         let rawKind = stringValue(dictionary["kind"]).lowercased().nilIfEmpty
+            ?? stringValue(payload["kind"]).lowercased().nilIfEmpty
+        let kind = rawKind.flatMap(SalaryPaymentKind.init(rawValue:))
         let date = stringValue(dictionary["date"])
         let periodMonth = stringValue(dictionary["periodMonth"]).nilIfEmpty
             ?? Self.inferredPeriodMonth(for: date, fallbackMonth: fallbackMonth)
@@ -169,8 +177,14 @@ struct SalaryService {
             weekendPay: doubleValue(dictionary["weekendPay"]) ?? 0,
             periodMonth: periodMonth,
             amount: doubleValue(dictionary["amount"]),
-            kind: rawKind.flatMap(SalaryPaymentKind.init(rawValue:)),
-            comment: stringValue(dictionary["comment"]).nilIfEmpty
+            kind: kind,
+            comment: stringValue(dictionary["comment"]).nilIfEmpty,
+            vacationStartDate: kind == .vacation
+                ? (stringValue(dictionary["vacationStartDate"]).nilIfEmpty
+                    ?? stringValue(payload["vacationStartDate"]).nilIfEmpty) : nil,
+            vacationEndDate: kind == .vacation
+                ? (stringValue(dictionary["vacationEndDate"]).nilIfEmpty
+                    ?? stringValue(payload["vacationEndDate"]).nilIfEmpty) : nil
         )
     }
 
@@ -217,7 +231,9 @@ struct SalaryService {
             periodMonth: input.periodMonth,
             amount: input.amount,
             kind: input.kind,
-            comment: input.comment
+            comment: input.comment,
+            vacationStartDate: input.kind == .vacation ? input.vacationStartDate : nil,
+            vacationEndDate: input.kind == .vacation ? input.vacationEndDate : nil
         )
     }
 
@@ -237,6 +253,12 @@ struct SalaryService {
         if let periodMonth = entry.periodMonth, !Self.isValidMonthKey(periodMonth) {
             throw AppServiceError.message("Некорректный месяц начисления.")
         }
+        if entry.kind == .vacation,
+           let error = SalaryEntry.vacationPeriodValidationError(
+               start: entry.vacationStartDate, end: entry.vacationEndDate
+           ) {
+            throw AppServiceError.message(error)
+        }
     }
 
     private func requestPayload(for entry: SalaryEntry) -> [String: Any] {
@@ -248,7 +270,9 @@ struct SalaryService {
             "periodMonth": entry.periodMonth as Any,
             "amount": entry.amount as Any,
             "kind": entry.kind?.rawValue as Any,
-            "comment": entry.comment as Any
+            "comment": entry.comment as Any,
+            "vacationStartDate": entry.vacationStartDate as Any,
+            "vacationEndDate": entry.vacationEndDate as Any
         ].compactMapValues { value in
             if let optional = value as? OptionalProtocol, optional.isNil {
                 return nil

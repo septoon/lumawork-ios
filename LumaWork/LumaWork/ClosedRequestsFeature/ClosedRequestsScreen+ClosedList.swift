@@ -120,7 +120,10 @@ extension ClosedRequestsScreen {
     }
 
     func formatSimpleOneDate(_ raw: String) -> String {
-        formatClosedAt(raw)
+        guard let date = SimpleOneRequestRecord.parseSimpleOneDate(raw) else {
+            return formatClosedAt(raw)
+        }
+        return Self.closedAtOutputFormatter.string(from: date)
     }
 
     func formatImportedAt(_ date: Date) -> String {

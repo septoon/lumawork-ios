@@ -11,6 +11,35 @@ nonisolated struct BackpackItem: Codable, Identifiable, Hashable, Sendable {
     var receivedAt: String
     var receivedAtDate: Date?
     var quantity: Int
+    var detailsFetchedAt: Date? = nil
+
+    func matchesSearch(_ query: String) -> Bool {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty || [name, serialNumber, receivedAt].contains {
+            $0.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
+
+    func hasSameListFields(as other: BackpackItem) -> Bool {
+        id == other.id && name == other.name && serialNumber == other.serialNumber
+            && responsible == other.responsible && quantity == other.quantity
+    }
+
+    func preservingDetails(from cached: BackpackItem) -> BackpackItem {
+        guard receivedAtDate == nil, hasSameListFields(as: cached) else { return self }
+        var item = self
+        item.receivedAt = cached.receivedAt
+        item.receivedAtDate = cached.receivedAtDate
+        item.detailsFetchedAt = cached.detailsFetchedAt
+        return item
+    }
+
+    func canReuseDetails(from cached: BackpackItem, now: Date = Date(), force: Bool = false) -> Bool {
+        guard !force, hasSameListFields(as: cached) else { return false }
+        if let receivedAtDate { return receivedAtDate == cached.receivedAtDate }
+        guard let fetchedAt = cached.detailsFetchedAt else { return false }
+        return (0..<300).contains(now.timeIntervalSince(fetchedAt))
+    }
 }
 
 private struct BackpackItemGroup: Identifiable {
@@ -135,7 +164,7 @@ final class BackpackStore {
         await refresh()
     }
 
-    func refresh() async {
+    func refresh(forceDetails: Bool = false) async {
         guard !isLoading else { return }
 
         guard let authKey = SimpleOneSessionKeychain.readAuthKey() else {
@@ -146,36 +175,39 @@ final class BackpackStore {
         isLoading = true
         isLoadingList = true
         errorMessage = nil
+        var publishedCompleteList = false
         defer {
             isLoadingList = false
             isLoading = false
+            loadingDetailIDs = []
+            if publishedCompleteList {
+                AppOfflineSnapshotStore.save(items, key: cacheKey)
+            }
         }
 
         do {
-            let listedItems = try await service.fetchItems(authKey: authKey)
-            try Task.checkCancellation()
             let cachedByID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
+            let cachedItems = items
+            let listedItems = try await service.fetchItems(authKey: authKey) { [weak self] partialItems in
+                guard let self, !Task.isCancelled else { return }
+                let loadedIDs = Set(partialItems.map(\.id))
+                self.items = partialItems.map { item in
+                    cachedByID[item.id].map { item.preservingDetails(from: $0) } ?? item
+                } + cachedItems.filter { !loadedIDs.contains($0.id) }
+            }
+            try Task.checkCancellation()
             items = listedItems.map { item in
-                guard let cached = cachedByID[item.id],
-                      item.receivedAtDate == nil,
-                      item.name == cached.name,
-                      item.serialNumber == cached.serialNumber,
-                      item.responsible == cached.responsible,
-                      item.quantity == cached.quantity else { return item }
-                var item = item
-                item.receivedAt = cached.receivedAt
-                item.receivedAtDate = cached.receivedAtDate
-                return item
+                cachedByID[item.id].map { item.preservingDetails(from: $0) } ?? item
             }
             lastUpdatedAt = Date()
             isLoadingList = false
             listRevision &+= 1
             photoRevision &+= 1
+            publishedCompleteList = true
             AppOfflineSnapshotStore.save(items, key: cacheKey)
 
             loadingDetailIDs = Set(items.map(\.id))
-            defer { loadingDetailIDs = [] }
-            try await service.hydrateItems(listedItems, cachedItems: Array(cachedByID.values), authKey: authKey) { [weak self] detailed in
+            try await service.hydrateItems(listedItems, cachedItems: cachedItems, authKey: authKey, force: forceDetails) { [weak self] detailed in
                 guard let self else { return }
                 if let index = self.items.firstIndex(where: { $0.id == detailed.id }) {
                     self.items[index] = detailed
@@ -183,7 +215,6 @@ final class BackpackStore {
                 self.loadingDetailIDs.remove(detailed.id)
             }
             try Task.checkCancellation()
-            AppOfflineSnapshotStore.save(items, key: cacheKey)
             if zip(items, listedItems).contains(where: { $0.0.name != $0.1.name }) {
                 photoRevision &+= 1
             }
@@ -210,7 +241,10 @@ struct BackpackService {
         return "(quantity>0^(warehouse.responsible_for_write_offCONTAINS_DYNAMIC\(writeOffDynamicID)^ORactivity.service_managerDYNAMIC\(currentUserDynamicID)^ORactivity.balance_management_managersCONTAINS_DYNAMIC\(writeOffDynamicID)^ORactivity.project_managerDYNAMIC\(currentUserDynamicID)))"
     }
 
-    func fetchItems(authKey: String) async throws -> [BackpackItem] {
+    func fetchItems(
+        authKey: String,
+        onPage: @MainActor @Sendable ([BackpackItem]) -> Void = { _ in }
+    ) async throws -> [BackpackItem] {
         var page = 1
         let perPage = 100
         var items: [BackpackItem] = []
@@ -226,6 +260,8 @@ struct BackpackService {
                 guard seenIDs.insert(item.id).inserted else { continue }
                 items.append(item)
             }
+            try Task.checkCancellation()
+            onPage(items)
 
             guard pageItems.count == perPage else { break }
             page += 1
@@ -319,17 +355,13 @@ struct BackpackService {
         _ items: [BackpackItem],
         cachedItems: [BackpackItem],
         authKey: String,
+        force: Bool = false,
         onItem: @MainActor @Sendable (BackpackItem) -> Void
     ) async throws {
         let cachedByID = Dictionary(cachedItems.map { ($0.id, $0) }, uniquingKeysWith: { current, _ in current })
         let pending = items.filter { item in
             guard let cached = cachedByID[item.id],
-                  let version = item.receivedAtDate,
-                  version == cached.receivedAtDate,
-                  item.name == cached.name,
-                  item.serialNumber == cached.serialNumber,
-                  item.responsible == cached.responsible,
-                  item.quantity == cached.quantity else { return true }
+                  item.canReuseDetails(from: cached, force: force) else { return true }
             onItem(cached)
             return false
         }
@@ -352,10 +384,7 @@ struct BackpackService {
                         throw SimpleOneServiceError.unauthorized
                     } catch {
                         if let cached = cachedByID[item.id],
-                           item.name == cached.name,
-                           item.serialNumber == cached.serialNumber,
-                           item.responsible == cached.responsible,
-                           item.quantity == cached.quantity {
+                           item.hasSameListFields(as: cached) {
                             return cached
                         }
                         return item
@@ -391,7 +420,8 @@ struct BackpackService {
             responsible: detailItem.responsible == "(не задано)" ? item.responsible : detailItem.responsible,
             receivedAt: detailItem.receivedAt == "(не задано)" ? item.receivedAt : detailItem.receivedAt,
             receivedAtDate: detailItem.receivedAtDate ?? item.receivedAtDate,
-            quantity: detailItem.quantity > 0 ? detailItem.quantity : item.quantity
+            quantity: detailItem.quantity > 0 ? detailItem.quantity : item.quantity,
+            detailsFetchedAt: Date()
         )
     }
 
@@ -429,7 +459,9 @@ struct BackpackScreen: View {
     @State private var locationStore = BackpackItemLocationStore()
     @State private var selectedGroup: BackpackItemGroup?
     @State private var selectedLocationFilter: BackpackItemLocation?
-    @State private var isOpening = true
+    @State private var searchText = ""
+    @State private var showsBarcodeScanner = false
+    @FocusState private var isSearchFocused: Bool
     @State private var loadedPhotoRevision: UInt64?
     @State private var userInitiatedReturnRevision: UInt64?
     @State private var showsEquipment = false
@@ -451,12 +483,11 @@ struct BackpackScreen: View {
     ]
 
     private var visibleItems: [BackpackItem] {
-        guard let selectedLocationFilter else { return store.items }
         return store.items.filter { item in
-            locationStore.location(
+            item.matchesSearch(searchText) && (selectedLocationFilter == nil || locationStore.location(
                 for: item,
                 isReturnEquipment: isReturnEquipment(item)
-            ) == selectedLocationFilter
+            ) == selectedLocationFilter)
         }
     }
 
@@ -492,7 +523,7 @@ struct BackpackScreen: View {
     }
 
     private var isListLoading: Bool {
-        isOpening || store.isLoadingList || isInitialLoading
+        store.items.isEmpty && store.lastUpdatedAt == nil && (store.isLoadingList || isInitialLoading)
     }
 
     private var isDataLoading: Bool {
@@ -509,6 +540,8 @@ struct BackpackScreen: View {
                         systemName: "person.crop.circle.badge.exclamationmark"
                     )
                 } else {
+                    searchField
+
                     if isInitialLoading {
                         BackpackInventoryHeaderSkeleton()
                             .depthStackPrimary(reduceMotion: reduceMotion)
@@ -545,12 +578,14 @@ struct BackpackScreen: View {
                     if !isListLoading,
                        !store.items.isEmpty,
                        groups.isEmpty,
-                       let selectedLocationFilter {
+                       (!searchText.isEmpty || selectedLocationFilter != nil) {
                         AppCard {
                             ContentUnavailableView(
-                                "Нет оборудования",
-                                systemImage: selectedLocationFilter.systemImage,
-                                description: Text("Для фильтра «\(selectedLocationFilter.title)» ничего не найдено.")
+                                searchText.isEmpty ? "Нет оборудования" : "Ничего не найдено",
+                                systemImage: searchText.isEmpty ? (selectedLocationFilter?.systemImage ?? "backpack") : "magnifyingglass",
+                                description: Text(searchText.isEmpty
+                                    ? "Для фильтра «\(selectedLocationFilter?.title ?? "Все")» ничего не найдено."
+                                    : "Оборудование по текущему поиску и фильтру не найдено.")
                             )
                         }
                         .depthStackSecondary()
@@ -608,11 +643,10 @@ struct BackpackScreen: View {
         }
         .task(id: simpleOneDataScopeID) {
             guard simpleOneStore.isAuthorized else { return }
-            isOpening = false
             await store.refresh()
         }
-        .task(id: isListLoading ? nil : store.listRevision) {
-            guard simpleOneStore.isAuthorized, !isListLoading,
+        .task(id: store.isLoadingList ? nil : store.listRevision, priority: .background) {
+            guard simpleOneStore.isAuthorized, !store.isLoadingList,
                   store.listRevision > 0, !store.items.isEmpty else { return }
             await coordinationStore.refreshReturnEquipment(
                 sessionID: makeCoordinationSessionID(for: simpleOneStore),
@@ -620,16 +654,18 @@ struct BackpackScreen: View {
                 showsNetworkBanner: userInitiatedReturnRevision == store.listRevision
             )
         }
-        .task(id: isListLoading ? nil : store.photoRevision) {
-            guard simpleOneStore.isAuthorized, !isListLoading,
-                  store.listRevision > 0, !store.items.isEmpty else { return }
+        .task(id: store.photoRevision, priority: .background) {
+            guard simpleOneStore.isAuthorized, !store.items.isEmpty else { return }
             let revision = store.photoRevision
             await photoStore.load(for: store.items)
             guard !Task.isCancelled else { return }
             loadedPhotoRevision = revision
         }
-        .onDisappear {
-            isOpening = true
+        .sheet(isPresented: $showsBarcodeScanner) {
+            BackpackBarcodeScannerSheet { serialNumber in
+                searchText = serialNumber
+                selectedLocationFilter = nil
+            }
         }
         .sheet(item: $selectedGroup) { group in
             let currentGroup = groups.first(where: { current in
@@ -654,7 +690,47 @@ struct BackpackScreen: View {
     private func refresh() async {
         guard simpleOneStore.isAuthorized else { return }
         userInitiatedReturnRevision = store.listRevision &+ 1
-        await store.refresh()
+        await store.refresh(forceDetails: true)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(AppTheme.mutedTint)
+            TextField("Название или S/N", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($isSearchFocused)
+                .accessibilityLabel("Поиск оборудования по названию или серийному номеру")
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(AppTheme.mutedTint)
+                }
+                .accessibilityLabel("Очистить поиск")
+            }
+            Divider().frame(height: 24)
+            Button {
+                isSearchFocused = false
+                showsBarcodeScanner = true
+            } label: {
+                Image(systemName: "barcode.viewfinder")
+                    .font(.title3)
+                    .frame(width: 36, height: 36)
+            }
+            .accessibilityLabel("Сканировать штрихкод оборудования")
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .padding(.vertical, 6)
+        .background(AppTheme.cardSurface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16).stroke(AppTheme.border, lineWidth: 1)
+        }
     }
 
     private var simpleOneDataScopeID: String {
@@ -1130,6 +1206,7 @@ private struct BackpackItemInstanceRow: View {
                         value: item.serialNumber,
                         systemImage: "barcode"
                     )
+                    .serialNumberBarcode(value: item.serialNumber)
 
                     Spacer(minLength: 8)
 
