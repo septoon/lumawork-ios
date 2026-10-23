@@ -691,9 +691,6 @@ struct ClientPersonalCommentBlock: View {
 
     private var rows: [(String, String)] {
         [
-            ("ИНН", comment.displayTIN),
-            ("Адреса", comment.targets.isEmpty ? "Все адреса" : comment.targets.map(\.displayText).joined(separator: "\n")),
-            ("ID терминалов", comment.terminalIDs.joined(separator: ", ")),
             ("Контактное лицо", comment.contactPerson),
             ("Телефон", comment.phone.isEmpty ? "" : ClientPersonalCommentPhoneFormatter.display(comment.phone)),
             ("Почта", comment.email),
