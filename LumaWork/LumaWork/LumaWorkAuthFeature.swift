@@ -717,6 +717,28 @@ final class AppSessionStore {
         isLoading = false
     }
 
+    /// Merge against the latest server profile; never replace known account data from a workbook.
+    func fillProfileFromGsm(_ profile: GsmProfile, expectedAccountID: String?) async throws {
+        guard let expectedAccountID, let originalSession = session, originalSession.user.id == expectedAccountID else {
+            throw AppServiceError.message("Аккаунт изменился. Откройте ГСМ профиль заново.")
+        }
+        let current = try await api.currentUser(token: originalSession.token)
+        guard session?.token == originalSession.token, current.id == expectedAccountID,
+              session?.user.id == expectedAccountID else {
+            throw AppServiceError.message("Аккаунт изменился. Откройте ГСМ профиль заново.")
+        }
+        let existing = current.profile ?? .empty
+        let filled = profile.fillingUserProfile(existing)
+        let user: AppUser
+        if filled == existing { user = current }
+        else { user = try await api.saveProfile(token: originalSession.token, profile: filled) }
+        guard session?.token == originalSession.token, session?.user.id == expectedAccountID, user.id == expectedAccountID else {
+            throw AppServiceError.message("Аккаунт изменился. Откройте ГСМ профиль заново.")
+        }
+        session = AppSession(token: originalSession.token, user: user)
+        try? LumaWorkSessionKeychain.saveSession(session!)
+    }
+
     private func clearLocalSession() {
         LumaWorkSessionKeychain.deleteSession()
         session = nil

@@ -177,6 +177,10 @@ enum VehicleInputValidation {
     private static let plateDigits = Set("0123456789")
     private static let vinCharacters = Set("ABCDEFGHJKLMNPRSTUVWXYZ0123456789")
 
+    static func canonicalPlate(_ value: String) -> String {
+        String(value.uppercased().filter { $0.isLetter || $0.isNumber }.map { cyrillicToLatin[$0] ?? $0 })
+    }
+
     static func formatPlate(_ value: String) -> String {
         let normalized = value.uppercased().compactMap { character -> Character? in
             if let mapped = latinToCyrillic[character] { return mapped }
@@ -462,6 +466,65 @@ final class VehicleStore {
                 showsNetworkBanner: showsNetworkBanner
             )
         }
+    }
+
+    /// Read-only refresh for GSM editing; does not synchronize unrelated legacy profile fields.
+    func loadForGsm() async {
+        do { try await refreshGsmVehicles() }
+        catch { errorMessage = appUserFacingErrorMessage(error) }
+    }
+
+    private func refreshGsmVehicles() async throws {
+        vehicles = try await api.fetchVehicles()
+        lastUpdatedAt = Date()
+        AppOfflineSnapshotStore.save(vehicles, key: cacheKey)
+    }
+
+    func confirmGsmVehicle(id: String) async throws {
+        try await refreshGsmVehicles()
+        guard vehicles.contains(where: { $0.id == id }) else {
+            throw AppServiceError.message("Сервер не подтвердил автомобиль ГСМ-профиля. Повторите «Сохранить».")
+        }
+    }
+
+    func gsmVehicle(matching plate: String) async throws -> Vehicle? {
+        try await refreshGsmVehicles()
+        let matches = vehicles.filter {
+            VehicleInputValidation.canonicalPlate($0.licensePlate ?? "") == VehicleInputValidation.canonicalPlate(plate)
+        }
+        guard matches.count <= 1 else {
+            throw AppServiceError.message("Найдено несколько автомобилей с этим госномером. Выберите автомобиль вручную.")
+        }
+        return matches.first
+    }
+
+    func createGsmVehicle(from profile: GsmProfile) async throws -> Vehicle {
+        var draft = VehicleDraft()
+        draft.model = profile.carModel
+        draft.customName = profile.carModel
+        draft.licensePlate = profile.licensePlate
+        draft.currentMileageKm = String(profile.defaultStartOdometer)
+        draft.isPrimary = vehicles.isEmpty
+        do {
+            let vehicle = try await api.createVehicle(draft)
+            vehicles.append(vehicle)
+            AppOfflineSnapshotStore.save(vehicles, key: cacheKey)
+            return vehicle
+        } catch {
+            // Handles conflicts and POST timeouts without creating a duplicate on retry.
+            let originalError = error
+            if let existing = try? await gsmVehicle(matching: profile.licensePlate) { return existing }
+            throw originalError
+        }
+    }
+
+    func applyGsmProfile(_ profile: GsmProfile) {
+        guard let index = vehicles.firstIndex(where: { $0.id == profile.vehicleID }) else { return }
+        vehicles[index].gsmSettings = Vehicle.GsmSettings(
+            fuelNorm: profile.fuelNorm, fuelType: profile.fuelType,
+            defaultStartOdometer: profile.defaultStartOdometer, reportStartMonth: profile.reportStartMonth
+        )
+        AppOfflineSnapshotStore.save(vehicles, key: cacheKey)
     }
 
     func select(_ vehicle: Vehicle?, haptic: Bool = true) {

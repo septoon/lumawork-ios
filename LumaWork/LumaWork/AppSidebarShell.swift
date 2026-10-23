@@ -985,7 +985,7 @@ private struct AppSidebarSettingsPlaceholder: View {
     let workDocumentsStore: WorkDocumentsStore
     let navigationVisibilityStore: AppNavigationVisibilityStore
     @AppStorage(SalaryPasscodeSettings.faceIDEnabledKey) private var isSalaryFaceIDEnabled = true
-    @State private var gsmProfileStore: GsmProfileSettingsStore
+    @Environment(GsmProfileSettingsStore.self) private var gsmProfileStore
     @State private var isFaceIDAvailable = false
     @State private var selectedAvatarItem: PhotosPickerItem?
     @State private var isPhotoLibraryPresented = false
@@ -1005,10 +1005,6 @@ private struct AppSidebarSettingsPlaceholder: View {
         self.vehicleStore = vehicleStore
         self.workDocumentsStore = workDocumentsStore
         self.navigationVisibilityStore = navigationVisibilityStore
-        _gsmProfileStore = State(initialValue: GsmProfileSettingsStore(
-            api: GsmProfileAPI(config: AppConfig(), authToken: sessionStore.authToken),
-            cacheID: sessionStore.session?.user.id
-        ))
     }
 
     var body: some View {
@@ -1164,7 +1160,8 @@ private struct AppSidebarSettingsPlaceholder: View {
             case .gsmProfile:
                 GsmProfileSettingsScreen(
                     store: gsmProfileStore,
-                    vehicleStore: vehicleStore
+                    vehicleStore: vehicleStore,
+                    sessionStore: sessionStore
                 )
             case .route:
                 RouteSettingsScreen(

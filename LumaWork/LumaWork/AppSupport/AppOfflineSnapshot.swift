@@ -40,6 +40,10 @@ nonisolated enum AppOfflineSnapshotStore {
         }
     }
 
+    static func remove(key: String) {
+        try? FileManager.default.removeItem(at: fileURL(for: key))
+    }
+
     static func scopedKey(_ name: String, userID: String?) -> String {
         let normalizedUserID = normalizedUserID(userID)
         guard let normalizedUserID, !normalizedUserID.isEmpty else { return name }

@@ -36,9 +36,9 @@ nonisolated struct ZIPArchive: Sendable {
     let data: Data
     let entries: [String: ZIPEntry]
 
-    init(data: Data) throws {
+    init(data: Data, maximumEntries: Int = 10_000, maximumPartBytes: Int = .max, maximumTotalBytes: Int = .max) throws {
         self.data = data
-        self.entries = try Self.readEntries(from: data)
+        self.entries = try Self.readEntries(from: data, maximumEntries: maximumEntries, maximumPartBytes: maximumPartBytes, maximumTotalBytes: maximumTotalBytes)
     }
 
     func extract(_ path: String) throws -> Data {
@@ -78,7 +78,7 @@ nonisolated struct ZIPArchive: Sendable {
         }
     }
 
-    private static func readEntries(from data: Data) throws -> [String: ZIPEntry] {
+    private static func readEntries(from data: Data, maximumEntries: Int, maximumPartBytes: Int, maximumTotalBytes: Int) throws -> [String: ZIPEntry] {
         guard let eocdOffset = findEndOfCentralDirectory(in: data) else {
             throw ClosedRequestsImportError.archive("Не найден конец central directory.")
         }
@@ -90,11 +90,12 @@ nonisolated struct ZIPArchive: Sendable {
         let totalEntries = Int(readUInt16(from: data, at: eocdOffset + 10))
         guard centralDirectoryOffset >= 0,
               centralDirectoryOffset <= data.count,
-              totalEntries <= 10_000 else {
+              totalEntries <= maximumEntries else {
             throw ClosedRequestsImportError.archive("Некорректный central directory.")
         }
         var entries = [String: ZIPEntry]()
         var cursor = centralDirectoryOffset
+        var totalBytes = 0
 
         for _ in 0 ..< totalEntries {
             guard cursor >= 0, cursor <= data.count - 46 else {
@@ -127,6 +128,13 @@ nonisolated struct ZIPArchive: Sendable {
                 throw ClosedRequestsImportError.archive("Не удалось прочитать имя файла в архиве.")
             }
 
+            guard entries[name] == nil, uncompressedSize <= maximumPartBytes,
+                  compressedSize <= maximumPartBytes,
+                  uncompressedSize <= maximumTotalBytes - totalBytes,
+                  compressionMethod != 0 || compressedSize == uncompressedSize else {
+                throw ClosedRequestsImportError.archive("Некорректная или слишком большая часть XLSX: \(name).")
+            }
+            totalBytes += uncompressedSize
             entries[name] = ZIPEntry(
                 name: name,
                 compressedSize: compressedSize,
@@ -159,6 +167,8 @@ nonisolated struct ZIPArchive: Sendable {
 
     private static func inflate(_ payload: Data, expectedSize: Int) -> Data? {
         guard expectedSize >= 0 else { return nil }
+        if expectedSize == 0 { return Data() }
+        guard !payload.isEmpty else { return nil }
         var destination = Data(count: expectedSize)
         let written = destination.withUnsafeMutableBytes { destinationBuffer in
             payload.withUnsafeBytes { payloadBuffer in
@@ -173,8 +183,7 @@ nonisolated struct ZIPArchive: Sendable {
             }
         }
 
-        guard written > 0 || expectedSize == 0 else { return nil }
-        destination.removeSubrange(written ..< destination.count)
+        guard written == expectedSize else { return nil }
         return destination
     }
 

@@ -9,6 +9,8 @@ struct ContentView: View {
     @State private var isAdminUnlocked = false
     @State private var isMenuPresented = false
     @State private var requestedActiveRequestID: String?
+    @State private var isGsmOnboardingPresented = false
+    @State private var importGsmOnOpen = false
     @State private var stores: AppDataStores
     private let sessionStore: AppSessionStore
     private let navigationRouter: AppNavigationRouter
@@ -46,8 +48,54 @@ struct ContentView: View {
         ) {
             selectedScreen
         }
+        .task(id: "\(sessionStore.session?.user.id ?? "")|\(sessionStore.isOfflineMode)") {
+            guard !sessionStore.isOfflineMode, stores.gsmProfileStore.needsImportOfferCheck else { return }
+            await stores.gsmProfileStore.load()
+        }
+        .alert("Заполнить ГСМ профиль", isPresented: Binding(
+            get: { stores.gsmProfileStore.isImportOfferPresented && !isGsmOnboardingPresented },
+            set: { if !$0 { stores.gsmProfileStore.acknowledgeImportOffer() } }
+        )) {
+            Button("Загрузить XLSX") {
+                stores.gsmProfileStore.acknowledgeImportOffer()
+                importGsmOnOpen = true
+                isGsmOnboardingPresented = true
+            }
+            Button("Заполнить вручную", role: .cancel) {
+                stores.gsmProfileStore.acknowledgeImportOffer()
+                importGsmOnOpen = false
+                isGsmOnboardingPresented = true
+            }
+        } message: {
+            Text("Загрузите отчёт за \(stores.gsmProfileStore.expectedImportMonth). Проверьте данные перед сохранением. Можно заполнить поля вручную.")
+        }
+        .sheet(isPresented: $isGsmOnboardingPresented) {
+            NavigationStack {
+                GsmProfileSettingsScreen(store: stores.gsmProfileStore, vehicleStore: stores.vehicleStore, sessionStore: sessionStore, importOnOpen: importGsmOnOpen)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            ModalCloseButton { isGsmOnboardingPresented = false }
+                                .disabled(stores.gsmProfileStore.isSaving || stores.gsmProfileStore.isImporting)
+                        }
+                    }
+            }
+            .appEditorSheetStyle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gsmProfileSaved)) { notification in
+            guard notification.userInfo?["accountID"] as? String == sessionStore.session?.user.id else { return }
+            if let types = notification.userInfo?["fuelTypes"] as? [String] { stores.fuelStore.availableFuelTypes = types }
+            stores.gsmReportStore.invalidateOdometerSuggestions()
+            Task {
+                let month = stores.homeStore.selectedMonthKey
+                guard !stores.homeStore.isLoadingRemote,
+                      stores.homeStore.record.periodStartOdometer == nil,
+                      let value = await stores.gsmReportStore.suggestedStartOdometer(for: month) else { return }
+                _ = stores.homeStore.applySuggestedPeriodStartOdometer(value, for: month)
+            }
+        }
         .environment(\.appIsOfflineMode, sessionStore.isOfflineMode)
         .environment(stores.evotorDriverLinksStore)
+        .environment(stores.gsmProfileStore)
         .tint(AppTheme.primaryTint)
         .background(KeyboardDismissOnTapInstaller())
         .onChange(of: selectedSection) { oldValue, newValue in

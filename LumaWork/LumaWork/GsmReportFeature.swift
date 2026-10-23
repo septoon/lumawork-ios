@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct GsmReportResponse: Codable, Hashable {
     let success: Bool
@@ -23,7 +24,7 @@ private struct GsmOdometerSuggestionResponse: Decodable {
     let startOdometer: Int?
 }
 
-struct GsmProjectOption: Codable, Hashable, Identifiable {
+nonisolated struct GsmProjectOption: Codable, Hashable, Identifiable, Sendable {
     let id: String
     let name: String
     let budgetCode: String
@@ -32,9 +33,10 @@ struct GsmProjectOption: Codable, Hashable, Identifiable {
 struct GsmProfileLoadResult {
     let profile: GsmProfile
     let availableFuelTypes: [String]
+    let profileExists: Bool
 }
 
-struct GsmProfile: Codable, Hashable {
+nonisolated struct GsmProfile: Codable, Hashable, Sendable {
     var vehicleID: String?
     var posProjectID: String?
     var armProjectID: String?
@@ -101,7 +103,17 @@ struct GsmProfile: Codable, Hashable {
     )
 }
 
-struct GsmProfileAPI {
+protocol GsmProfileServing {
+    func fetchProfile() async throws -> GsmProfileLoadResult
+    func fetchProjects() async throws -> [GsmProjectOption]
+    func saveProfile(_ profile: GsmProfile) async throws -> GsmProfile
+}
+
+extension Notification.Name {
+    static let gsmProfileSaved = Notification.Name("LumaWork.gsmProfileSaved")
+}
+
+struct GsmProfileAPI: GsmProfileServing {
     private let apiOrigin: String?
     private let authToken: String?
     private let client = HTTPClient()
@@ -121,9 +133,12 @@ struct GsmProfileAPI {
             .map { stringValue($0) }
             .filter { !$0.isEmpty } ?? []
         guard let dictionary = profileDictionary(from: response.json) else {
-            return GsmProfileLoadResult(profile: .empty, availableFuelTypes: availableFuelTypes)
+            guard root["profile"] is NSNull else {
+                throw AppServiceError.message("Сервер не подтвердил состояние ГСМ-профиля.")
+            }
+            return GsmProfileLoadResult(profile: .empty, availableFuelTypes: availableFuelTypes, profileExists: false)
         }
-        return GsmProfileLoadResult(profile: mapProfile(dictionary), availableFuelTypes: availableFuelTypes)
+        return GsmProfileLoadResult(profile: mapProfile(dictionary), availableFuelTypes: availableFuelTypes, profileExists: true)
     }
 
     func fetchProjects() async throws -> [GsmProjectOption] {
@@ -156,9 +171,14 @@ struct GsmProfileAPI {
         body["vehicleId"] = profile.vehicleID ?? NSNull()
         body["posProjectId"] = profile.posProjectID ?? NSNull()
         body["armProjectId"] = profile.armProjectID ?? NSNull()
+        for key in ["budgetCode", "projectName", "employeeTitleCompany", "employeeAddressPhone"] {
+            if (body[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true {
+                body.removeValue(forKey: key)
+            }
+        }
         let response = try await client.request(url, method: "PUT", body: body, authToken: authToken)
         guard let dictionary = profileDictionary(from: response.json) else {
-            return profile
+            throw AppServiceError.message("Сервер не подтвердил сохранение ГСМ-профиля.")
         }
         return mapProfile(dictionary)
     }
@@ -245,79 +265,219 @@ struct GsmProfileAPI {
     }
 }
 
+@MainActor
 @Observable
 final class GsmProfileSettingsStore {
+    private struct Draft: Codable {
+        let profile: GsmProfile
+        let imported: GsmProfileImport?
+    }
     private static let fallbackFuelTypes = [
         "АИ-92", "АИ-92 Фирменное", "АИ-95", "АИ-95 Фирменное",
         "АИ-98", "АИ-100", "ДТ", "ДТ Зимнее"
     ]
-    private let api: GsmProfileAPI
+    private let api: any GsmProfileServing
     private let cacheKey: String
+    private let draftKey: String
+    private let offerKey: String
+    private let accountID: String?
+    private var baseline = GsmProfile.empty
+    private var isApplying = false
+    private var hasDraft = false
+    private var revision = 0
 
-    var profile = GsmProfile.empty
+    var profile = GsmProfile.empty {
+        didSet {
+            guard !isApplying, profile != oldValue else { return }
+            revision += 1
+            hasDraft = true
+            persistDraft()
+        }
+    }
+    private(set) var imported: GsmProfileImport?
     var projects: [GsmProjectOption] = []
     var availableFuelTypes: [String] = fallbackFuelTypes
     var lastUpdatedAt: Date?
     var isLoading = false
     var isSaving = false
+    var isImporting = false
+    private(set) var isProfileReady = false
+    private(set) var isServerConfirmedEmpty = false
+    var isImportOfferPresented = false
     var notice: String?
     var errorMessage: String?
+    var isBusy: Bool { isLoading || isSaving || isImporting }
+    var hasUnsavedChanges: Bool { hasDraft || profile != baseline }
+    var canImport: Bool { isServerConfirmedEmpty && !isBusy }
+    var canSave: Bool { isProfileReady && !isBusy }
+    var expectedImportMonth: String { GsmProfileXlsx.previousMonth() }
+    var needsImportOfferCheck: Bool { !UserDefaults.standard.bool(forKey: offerKey) }
 
-    init(api: GsmProfileAPI, cacheID: String? = nil) {
+    init(api: any GsmProfileServing, cacheID: String? = nil) {
         self.api = api
+        accountID = cacheID
         cacheKey = AppOfflineSnapshotStore.scopedKey("gsm-profile", userID: cacheID)
+        draftKey = AppOfflineSnapshotStore.scopedKey("gsm-profile-draft", userID: cacheID)
+        offerKey = AppOfflineSnapshotStore.scopedKey("gsm-profile-import-offered", userID: cacheID)
+        isApplying = true
         if let snapshot = AppOfflineSnapshotStore.load(GsmProfile.self, key: cacheKey) {
-            var cachedProfile = snapshot.value
-            cachedProfile.employeePhone = GsmPhoneFormatter.format(cachedProfile.employeePhone)
-            profile = cachedProfile
+            baseline = snapshot.value
+            baseline.employeePhone = GsmPhoneFormatter.format(baseline.employeePhone)
+            profile = baseline
             lastUpdatedAt = snapshot.updatedAt
         }
+        if let draft = AppOfflineSnapshotStore.load(Draft.self, key: draftKey)?.value {
+            profile = draft.profile
+            imported = draft.imported
+            hasDraft = true
+        }
+        isApplying = false
     }
 
     func load() async {
+        guard !isBusy else { return }
         isLoading = true
+        isProfileReady = false
+        isServerConfirmedEmpty = false
         errorMessage = nil
+        let startedRevision = revision
+        defer { isLoading = false }
         do {
-            let loadedProfile = try await api.fetchProfile()
-            profile = loadedProfile.profile
-            availableFuelTypes = loadedProfile.availableFuelTypes.isEmpty
-                ? Self.fallbackFuelTypes
-                : loadedProfile.availableFuelTypes
-            lastUpdatedAt = Date()
-            AppOfflineSnapshotStore.save(profile, key: cacheKey)
-
-            do {
-                projects = try await api.fetchProjects()
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                projects = []
+            let loaded = try await api.fetchProfile()
+            try Task.checkCancellation()
+            baseline = loaded.profile
+            isProfileReady = true
+            isServerConfirmedEmpty = !loaded.profileExists
+            if loaded.profileExists { UserDefaults.standard.set(true, forKey: offerKey) }
+            availableFuelTypes = loaded.availableFuelTypes.isEmpty ? Self.fallbackFuelTypes : loaded.availableFuelTypes
+            if !hasDraft, revision == startedRevision {
+                isApplying = true
+                profile = loaded.profile
+                isApplying = false
             }
-        } catch is CancellationError {
-            return
-        } catch {
-            errorMessage = appUserFacingErrorMessage(error)
-        }
-        isLoading = false
+            lastUpdatedAt = Date()
+            AppOfflineSnapshotStore.save(loaded.profile, key: cacheKey)
+            do { projects = try await api.fetchProjects() }
+            catch is CancellationError { throw CancellationError() }
+            catch { /* Keep the last catalog; unresolved import fields remain manual. */ }
+            if isServerConfirmedEmpty, !hasDraft, !UserDefaults.standard.bool(forKey: offerKey) {
+                isImportOfferPresented = true
+            }
+        } catch is CancellationError { return }
+        catch { errorMessage = appUserFacingErrorMessage(error) }
     }
 
-    func save() async -> Bool {
-        guard !isSaving else { return false }
+    func acknowledgeImportOffer() {
+        UserDefaults.standard.set(true, forKey: offerKey)
+        isImportOfferPresented = false
+    }
+
+    func importReport(_ url: URL) async {
+        guard canImport else { return }
+        acknowledgeImportOffer()
+        isImporting = true
+        errorMessage = nil
+        notice = nil
+        defer { isImporting = false }
+        let expectedMonth = expectedImportMonth
+        let catalog = projects
+        do {
+            let result = try await Task.detached(priority: .userInitiated) {
+                try GsmProfileXlsx.read(url, expectedMonth: expectedMonth, projects: catalog)
+            }.value
+            try Task.checkCancellation()
+            imported = result
+            profile = result.profile
+            hasDraft = true
+            persistDraft()
+            notice = "Проверьте все поля. Данные сохранятся только после нажатия «Сохранить»."
+        } catch is CancellationError { return }
+        catch { errorMessage = appUserFacingErrorMessage(error) }
+    }
+
+    private func persistDraft() {
+        AppOfflineSnapshotStore.save(Draft(profile: profile, imported: imported), key: draftKey)
+    }
+
+    func save(vehicleStore: VehicleStore? = nil, sessionStore: AppSessionStore? = nil) async -> Bool {
+        guard canSave else { return false }
         isSaving = true
+        acknowledgeImportOffer()
         notice = nil
         errorMessage = nil
         defer { isSaving = false }
-
         do {
-            profile.employeePhone = GsmPhoneFormatter.format(profile.employeePhone)
-            profile = try await api.saveProfile(profile)
+            var pending = profile
+            pending.employeePhone = GsmPhoneFormatter.format(pending.employeePhone)
+            guard GsmPhoneFormatter.isComplete(pending.employeePhone) else {
+                throw AppServiceError.message("Введите телефон полностью: +7(XXX)XXX-XX-XX.")
+            }
+            if let pos = projects.first(where: { $0.id == pending.posProjectID }) {
+                pending.budgetCode = pos.budgetCode
+                pending.projectName = pos.name
+            }
+            var existingVehicle: Vehicle?
+            let needsVehicleLink = pending.vehicleID == nil && !pending.carModel.isEmpty && !pending.licensePlate.isEmpty
+            if needsVehicleLink, let vehicleStore {
+                existingVehicle = try await vehicleStore.gsmVehicle(matching: pending.licensePlate)
+                pending.vehicleID = existingVehicle?.id
+            }
+            var accepted = try await api.saveProfile(pending)
+            // A partially saved profile must remain recoverable as a local draft.
+            baseline = accepted
+            isServerConfirmedEmpty = false
+            AppOfflineSnapshotStore.save(accepted, key: cacheKey)
+            if needsVehicleLink, let vehicleStore {
+                do {
+                    let vehicle: Vehicle
+                    if let existingVehicle { vehicle = existingVehicle }
+                    else { vehicle = try await vehicleStore.createGsmVehicle(from: accepted) }
+                    if accepted.vehicleID != vehicle.id {
+                        accepted.vehicleID = vehicle.id
+                        accepted = try await api.saveProfile(accepted)
+                    }
+                } catch {
+                    throw AppServiceError.message("Профиль принят, но связь с «Авто» не сохранена. Повторите «Сохранить»: \(error.localizedDescription)")
+                }
+            }
+            let confirmed = try await api.fetchProfile()
+            guard confirmed.profileExists, confirmed.profile == accepted else {
+                throw AppServiceError.message("Сервер не подтвердил сохранённые данные ГСМ-профиля. Повторите «Сохранить».")
+            }
+            if let vehicleID = accepted.vehicleID, let vehicleStore {
+                try await vehicleStore.confirmGsmVehicle(id: vehicleID)
+                vehicleStore.applyGsmProfile(confirmed.profile)
+            }
+            if imported != nil {
+                guard let sessionStore else {
+                    throw AppServiceError.message("Откройте ГСМ профиль заново для заполнения профиля LumaWork.")
+                }
+                do { try await sessionStore.fillProfileFromGsm(confirmed.profile, expectedAccountID: accountID) }
+                catch is CancellationError { throw CancellationError() }
+                catch {
+                    throw AppServiceError.message("ГСМ и авто сохранены, но профиль LumaWork не заполнен. Повторите «Сохранить»: \(error.localizedDescription)")
+                }
+            }
+            accepted = confirmed.profile
+            isApplying = true
+            profile = accepted
+            isApplying = false
+            baseline = accepted
+            imported = nil
+            hasDraft = false
+            isServerConfirmedEmpty = false
+            revision += 1
             lastUpdatedAt = Date()
-            AppOfflineSnapshotStore.save(profile, key: cacheKey)
+            AppOfflineSnapshotStore.save(accepted, key: cacheKey)
+            AppOfflineSnapshotStore.remove(key: draftKey)
+            AppOfflineSnapshotStore.save(accepted.fuelTypes, key: AppOfflineSnapshotStore.scopedKey("fuel-types", userID: accountID))
+            NotificationCenter.default.post(name: .gsmProfileSaved, object: nil, userInfo: ["accountID": accountID ?? "", "fuelTypes": accepted.fuelTypes])
             notice = "ГСМ профиль сохранён."
             return true
-        } catch is CancellationError {
-            return false
-        } catch {
+        } catch is CancellationError { return false }
+        catch {
+            hasDraft = true
+            persistDraft()
             errorMessage = appUserFacingErrorMessage(error)
             return false
         }
@@ -475,7 +635,7 @@ final class GsmReportStore {
     private let api: GsmReportAPI
     private var odometerSuggestions: [String: Int] = [:]
     private var monthsWithoutOdometerSuggestion = Set<String>()
-    private var odometerSuggestionRequestsInFlight = Set<String>()
+    private var odometerSuggestionRequestsInFlight: [String: UUID] = [:]
 
     private(set) var isSending = false
     var notice: String?
@@ -485,16 +645,28 @@ final class GsmReportStore {
         self.api = api
     }
 
+    func invalidateOdometerSuggestions() {
+        monthsWithoutOdometerSuggestion.removeAll()
+        odometerSuggestions.removeAll()
+        odometerSuggestionRequestsInFlight.removeAll()
+    }
+
     func suggestedStartOdometer(for month: String) async -> Int? {
         if let cached = odometerSuggestions[month] { return cached }
         guard !monthsWithoutOdometerSuggestion.contains(month),
-              odometerSuggestionRequestsInFlight.insert(month).inserted else {
-            return nil
+              odometerSuggestionRequestsInFlight[month] == nil else { return nil }
+        let requestID = UUID()
+        odometerSuggestionRequestsInFlight[month] = requestID
+        defer {
+            if odometerSuggestionRequestsInFlight[month] == requestID {
+                odometerSuggestionRequestsInFlight.removeValue(forKey: month)
+            }
         }
-        defer { odometerSuggestionRequestsInFlight.remove(month) }
 
         do {
-            guard let value = try await api.fetchStartOdometerSuggestion(month: month) else {
+            let fetched = try await api.fetchStartOdometerSuggestion(month: month)
+            guard odometerSuggestionRequestsInFlight[month] == requestID else { return nil }
+            guard let value = fetched else {
                 monthsWithoutOdometerSuggestion.insert(month)
                 return nil
             }
@@ -706,13 +878,24 @@ struct GsmProfileSettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var store: GsmProfileSettingsStore
     @Bindable var vehicleStore: VehicleStore
+    let sessionStore: AppSessionStore
+    var importOnOpen = false
+    @State private var didOpenInitialImporter = false
     @State private var pendingVehicle: Vehicle?
     @State private var isAddVehiclePresented = false
+    @State private var isFileImporterPresented = false
+    @State private var isReplaceDraftPresented = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
+                if store.isLoading || store.isImporting { ProgressView().frame(maxWidth: .infinity) }
+                if store.isServerConfirmedEmpty { importCard }
                 gsmVehicleCard
+                if store.profile.vehicleID == nil {
+                    field("Марка и модель для отчёта", text: $store.profile.carModel)
+                    field("Госномер для отчёта", text: $store.profile.licensePlate)
+                }
                 projectSelector(title: "Проект POS", selection: $store.profile.posProjectID)
                 projectSelector(title: "Проект АРМ", selection: $store.profile.armProjectID)
                 field("ФИО сотрудника", text: $store.profile.employeeFullName)
@@ -729,6 +912,15 @@ struct GsmProfileSettingsScreen: View {
                 fuelTypesSelector
                 reportStartMonthSelector
                 numberField("Норма топлива", value: $store.profile.fuelNorm)
+                field("Стартовый одометр", text: Binding(
+                    get: { String(store.profile.defaultStartOdometer) },
+                    set: { store.profile.defaultStartOdometer = Int($0.filter(\.isNumber)) ?? 0 }
+                ))
+                .keyboardType(.numberPad)
+                .disabled(!store.isServerConfirmedEmpty)
+                if let imported = store.imported {
+                    importDetails(imported)
+                }
 
                 if let notice = store.notice {
                     AppNoticeBanner(text: notice, tint: AppTheme.secondaryTint)
@@ -738,6 +930,7 @@ struct GsmProfileSettingsScreen: View {
                 }
             }
             .padding(20)
+            .disabled(store.isBusy)
         }
         .background(AppTheme.background.ignoresSafeArea())
         .navigationTitle("ГСМ профиль")
@@ -747,12 +940,12 @@ struct GsmProfileSettingsScreen: View {
                 ModalConfirmButton(
                     action: {
                         Task {
-                            guard await store.save() else { return }
+                            guard await store.save(vehicleStore: vehicleStore, sessionStore: sessionStore) else { return }
                             AppHaptics.trigger()
                             dismiss()
                         }
                     },
-                    isDisabled: store.isSaving,
+                    isDisabled: !store.canSave,
                     isLoading: store.isSaving,
                     accessibilityLabel: "Сохранить ГСМ профиль"
                 )
@@ -760,9 +953,31 @@ struct GsmProfileSettingsScreen: View {
         }
         .task {
             async let profile: Void = store.load()
-            async let vehicles: Void = vehicleStore.load()
+            async let vehicles: Void = vehicleStore.loadForGsm()
             _ = await (profile, vehicles)
+            if importOnOpen, !didOpenInitialImporter, store.canImport {
+                didOpenInitialImporter = true
+                store.acknowledgeImportOffer()
+                if store.hasUnsavedChanges { isReplaceDraftPresented = true }
+                else { isFileImporterPresented = true }
+            }
         }
+        .fileImporter(isPresented: $isFileImporterPresented, allowedContentTypes: [UTType(filenameExtension: "xlsx") ?? .spreadsheet], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first { Task { await store.importReport(url) } }
+            case .failure(let error):
+                store.errorMessage = appUserFacingErrorMessage(error)
+            }
+        }
+        .confirmationDialog("Заменить текущий черновик?", isPresented: $isReplaceDraftPresented, titleVisibility: .visible) {
+            Button("Выбрать XLSX", role: .destructive) { isFileImporterPresented = true }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Поля будут заменены только после успешного чтения файла.")
+        }
+        .interactiveDismissDisabled(store.isSaving || store.isImporting)
+        .navigationBarBackButtonHidden(store.isSaving || store.isImporting)
         .confirmationDialog(
             "Изменить автомобиль для ГСМ-отчёта?",
             isPresented: Binding(get: { pendingVehicle != nil }, set: { if !$0 { pendingVehicle = nil } })
@@ -779,6 +994,42 @@ struct GsmProfileSettingsScreen: View {
             AddVehicleFlow(store: vehicleStore)
                 .appEditorSheetStyle()
         }
+    }
+
+    private var importCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Первое заполнение").font(.headline)
+            Text("Загрузите отчёт ГСМ за \(store.expectedImportMonth) или заполните поля вручную.")
+                .font(.subheadline).foregroundStyle(AppTheme.mutedTint)
+            Button("Загрузить отчёт XLSX", systemImage: "square.and.arrow.down") {
+                store.acknowledgeImportOffer()
+                if store.hasUnsavedChanges { isReplaceDraftPresented = true }
+                else { isFileImporterPresented = true }
+            }
+            .buttonStyle(.bordered)
+            .disabled(!store.canImport)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func importDetails(_ imported: GsmProfileImport) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Проверьте все поля").font(.headline)
+            Text("При сохранении ФИО и должность дополнят пустые поля профиля LumaWork. Город переносится только при явном указании в адресе; заполненные поля сохранятся.")
+                .font(.caption).foregroundStyle(AppTheme.mutedTint)
+            if let city = store.profile.fillingUserProfile(.empty).city {
+                Text("Город из адреса: \(city)").font(.caption)
+            }
+            ForEach(imported.notes, id: \.self) { Text($0).font(.caption).foregroundStyle(AppTheme.mutedTint) }
+            DisclosureGroup("Источники данных") {
+                ForEach(imported.sources.keys.sorted(), id: \.self) { key in
+                    Text("\(key): \(imported.sources[key] ?? "")")
+                        .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .font(.subheadline)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var gsmVehicleCard: some View {
@@ -800,6 +1051,11 @@ struct GsmProfileSettingsScreen: View {
                     }
                     Spacer()
                 }
+            } else if !store.profile.carModel.isEmpty || !store.profile.licensePlate.isEmpty {
+                Text(store.profile.carModel).font(.headline).foregroundStyle(AppTheme.ink)
+                Text(store.profile.licensePlate).font(.subheadline.monospaced()).foregroundStyle(AppTheme.mutedTint)
+                Text("Автомобиль будет связан с профилем после «Сохранить».")
+                    .font(.caption).foregroundStyle(AppTheme.mutedTint)
             } else {
                 Text("Автомобиль не выбран").font(.headline).foregroundStyle(AppTheme.ink)
             }

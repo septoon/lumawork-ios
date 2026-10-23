@@ -15,6 +15,8 @@ struct RouteMonthlyMileage: Hashable {
     private let service: RouteDayService
     private let storage: RouteLocalStorage
     private var hasLoaded = false
+    private let manualOdometerKey: String
+    private var manualOdometerMonths: Set<String>
     private let reportStartDate = "2026-04-01"
     private let appleDistanceCalculator = AppleRouteDistanceCalculator()
     private var appleDistanceTask: Task<Void, Never>?
@@ -48,6 +50,8 @@ struct RouteMonthlyMileage: Hashable {
 
     init(service: RouteDayService, cacheID: String? = nil) {
         self.service = service
+        self.manualOdometerKey = AppOfflineSnapshotStore.scopedKey("route.manual-odometer-months", userID: cacheID)
+        self.manualOdometerMonths = Set(UserDefaults.standard.stringArray(forKey: manualOdometerKey) ?? [])
         self.storage = RouteLocalStorage(cacheID: cacheID)
         let todayKey = RouteDateFormatter.dayKey(from: Date())
         self.routeSettings = storage.loadSettings()
@@ -369,6 +373,8 @@ struct RouteMonthlyMileage: Hashable {
     }
 
     func updatePeriodStartOdometer(_ value: String) {
+        manualOdometerMonths.insert(selectedMonthKey)
+        UserDefaults.standard.set(Array(manualOdometerMonths), forKey: manualOdometerKey)
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let odometer = trimmed.isEmpty ? nil : Int(trimmed)
         storage.savePeriodStartOdometer(odometer, for: selectedMonthKey)
@@ -380,6 +386,7 @@ struct RouteMonthlyMileage: Hashable {
     @discardableResult
     func applySuggestedPeriodStartOdometer(_ value: Int, for monthKey: String) -> Bool {
         guard value >= 0,
+              !manualOdometerMonths.contains(monthKey),
               selectedMonthKey == monthKey,
               record.periodStartOdometer == nil,
               storage.loadPeriodStartOdometer(for: monthKey) == nil else {
