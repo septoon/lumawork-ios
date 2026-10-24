@@ -127,6 +127,7 @@ struct HomeScreen: View {
         .navigationTitle("Главная")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
+            await routeStore.refreshArchiveState()
             await onRefresh()
         }
         .toolbar {
@@ -768,6 +769,7 @@ struct HomeScreen: View {
         [
             routeStore.selectedDateKey,
             routeStore.workType.rawValue,
+            routeStore.areArchiveExclusionsReady ? "exclusions-ready" : "exclusions-loading",
             routeStore.isLoadingRemote ? "remote-loading" : "remote-ready",
             closedRequestsStore.isLoadingSnapshot ? "requests-loading" : "requests-ready",
             "\(closedRequestsStore.snapshot?.importedAt.timeIntervalSinceReferenceDate ?? 0)"

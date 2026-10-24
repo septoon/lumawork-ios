@@ -36,6 +36,10 @@ struct RouteMonthlyMileage: Hashable {
     var addressOptions: [String] = []
     private(set) var officeAddresses: [String] = []
     private(set) var isLoadingOfficeAddresses = false
+    private(set) var isDeletingArchivedDay = false
+    private var isProcessingQueue = false
+    private var archiveMutationRevision = 0
+    private(set) var areArchiveExclusionsReady = false
     var isSending = false
     var isLoadingRemote = false
     var notice: String?
@@ -54,6 +58,7 @@ struct RouteMonthlyMileage: Hashable {
         self.manualOdometerMonths = Set(UserDefaults.standard.stringArray(forKey: manualOdometerKey) ?? [])
         self.storage = RouteLocalStorage(cacheID: cacheID)
         let todayKey = RouteDateFormatter.dayKey(from: Date())
+        self.areArchiveExclusionsReady = storage.hasExcludedDatesSnapshot
         self.routeSettings = storage.loadSettings()
         self.record = storage.loadDay(todayKey, workType: .pos)
         self.dailyMileageByDate = storage.loadDailyMileageByDate()
@@ -207,15 +212,42 @@ struct RouteMonthlyMileage: Hashable {
     }
 
     func makeRoutesArchiveStore() -> RouteArchiveStore {
-        RouteArchiveStore(service: service, settings: routeSettings)
+        RouteArchiveStore(service: service, settings: routeSettings, storage: storage)
     }
 
     func loadIfNeeded() async {
-        guard !hasLoaded else { return }
+        guard !hasLoaded else {
+            if !areArchiveExclusionsReady { await refreshArchiveState() }
+            return
+        }
         hasLoaded = true
+        await syncArchiveExclusions()
         setSelectedDate(selectedDate)
         await processQueue()
         await refreshMileageHistory()
+    }
+
+    func refreshArchiveState() async {
+        await syncArchiveExclusions()
+        await processQueue()
+        await refreshMileageHistory()
+    }
+
+    private func syncArchiveExclusions() async {
+        do {
+            let dates = try await service.fetchExcludedDates()
+            let shouldClearCurrent = dates.contains(record.date) && !storage.isPendingRestore(record.date)
+                && (record.sent || storage.loadQueue().contains { $0.date == record.date })
+            storage.syncExcludedDates(dates)
+            if shouldClearCurrent {
+                record = RouteLocalStorage.defaultDay(for: record.date, workType: record.workType, settings: routeSettings)
+                record.periodStartOdometer = storage.loadPeriodStartOdometer(for: String(record.date.prefix(7)))
+            }
+            areArchiveExclusionsReady = true
+        } catch RouteDayServiceError.notFound {
+            // An older API cannot have server-side archive exclusions yet.
+            areArchiveExclusionsReady = true
+        } catch { }
     }
 
     func setWorkType(_ newValue: RouteWorkType) {
@@ -629,7 +661,7 @@ struct RouteMonthlyMileage: Hashable {
     }
 
     func autoImportClosedRequestsIfEmpty(_ requests: [ClosedRequestRecord]) -> Bool {
-        guard workType == .pos else { return false }
+        guard workType == .pos, areArchiveExclusionsReady, !storage.isExcluded(selectedDateKey) else { return false }
         guard !hasCurrentRouteData, !requests.isEmpty else { return false }
         guard let firstStop = record.stops.first, let lastStop = record.stops.last else { return false }
 
@@ -724,7 +756,7 @@ struct RouteMonthlyMileage: Hashable {
 
     @discardableResult
     func sendCurrentDay() async -> Bool {
-        guard !isSending else { return false }
+        guard !isSending, !isDeletingArchivedDay, !isProcessingQueue else { return false }
         errorMessage = nil
         notice = nil
 
@@ -757,6 +789,7 @@ struct RouteMonthlyMileage: Hashable {
             dailyMileageByDate[currentRecord.workType.storageKey(for: dateKey)] = distanceKm
         }
 
+        storage.beginExplicitRestore(dateKey)
         isSending = true
         defer { isSending = false }
 
@@ -784,6 +817,23 @@ struct RouteMonthlyMileage: Hashable {
         }
     }
 
+    func deleteArchivedDay(_ date: String) async throws {
+        guard !isSending, !isProcessingQueue, !isDeletingArchivedDay, !isLoadingRemote else {
+            throw AppServiceError.message("Дождитесь завершения загрузки или отправки маршрута.")
+        }
+        isDeletingArchivedDay = true
+        defer { isDeletingArchivedDay = false }
+        try await service.deleteDay(date: date)
+        storage.deleteDay(date)
+        archiveMutationRevision += 1
+        for type in RouteWorkType.allCases { dailyMileageByDate.removeValue(forKey: type.storageKey(for: date)) }
+        if selectedDateKey == date {
+            record = RouteLocalStorage.defaultDay(for: date, workType: workType, settings: routeSettings)
+            record.periodStartOdometer = storage.loadPeriodStartOdometer(for: String(date.prefix(7)))
+            refreshAddressOptions()
+        }
+    }
+
     private func shouldFetchRemote(for record: RouteDayRecord, dateKey: String) -> Bool {
         if dateKey == RouteDateFormatter.dayKey(from: Date()), !record.sent {
             return false
@@ -796,6 +846,7 @@ struct RouteMonthlyMileage: Hashable {
     private func markSubmitted(_ submitted: RouteDayRecord) {
         // Keep edits made while the request was in flight, including another day.
         guard storage.loadDay(submitted.date, workType: submitted.workType) == submitted else { return }
+        storage.finishExplicitRestore(submitted.date)
         var saved = submitted
         saved.sent = true
         storage.saveDay(saved)
@@ -846,10 +897,15 @@ struct RouteMonthlyMileage: Hashable {
     }
 
     private func processQueue() async {
+        guard !isDeletingArchivedDay, !isSending, !isProcessingQueue else { return }
+        isProcessingQueue = true
+        defer { isProcessingQueue = false }
+        guard areArchiveExclusionsReady else { return }
         let queue = storage.loadQueue()
         guard !queue.isEmpty else { return }
 
         for item in queue {
+            guard !storage.isExcluded(item.date) || storage.isPendingRestore(item.date) else { storage.dequeue(item.date, workType: item.workType); continue }
             var day = storage.loadDay(item.date, workType: item.workType)
             guard Self.hasDataToSend(day) else {
                 storage.dequeue(item.date, workType: item.workType)
@@ -884,11 +940,13 @@ struct RouteMonthlyMileage: Hashable {
     }
 
     private func refreshMileageHistory() async {
+        let revision = archiveMutationRevision
         var mileageByDate = storage.loadDailyMileageByDate()
         var remoteKeys = Set<String>()
 
         do {
             let remoteRecords = try await service.fetchAllDays(settings: routeSettings)
+            guard archiveMutationRevision == revision else { return }
             for record in remoteRecords {
                 remoteKeys.insert(record.workType.storageKey(for: record.date))
                 if let distanceKm = record.distanceKm {
@@ -1009,19 +1067,24 @@ struct RouteMonthlyMileage: Hashable {
 final class RouteArchiveStore {
     private let service: RouteDayService
     private let settings: RouteSettings
-    private let storage = RouteLocalStorage()
+    private let storage: RouteLocalStorage
     private var hasLoaded = false
 
     var records: [RouteDayRecord] = []
     var isLoading = false
     var errorMessage: String?
 
-    init(service: RouteDayService, settings: RouteSettings) {
+    init(service: RouteDayService, settings: RouteSettings, storage: RouteLocalStorage) {
+        self.storage = storage
         self.service = service
         self.settings = settings
         self.records = storage.loadAllDays().values.sorted {
             $0.date == $1.date ? $0.workType.rawValue > $1.workType.rawValue : $0.date > $1.date
         }
+    }
+
+    func removeDeletedDay(_ date: String) {
+        records.removeAll { $0.date == date }
     }
 
     func loadIfNeeded() async {
@@ -1031,6 +1094,7 @@ final class RouteArchiveStore {
     }
 
     func reload(showsNetworkBanner: Bool = true) async {
+        guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }

@@ -12,6 +12,8 @@ struct RouteArchiveScreen: View {
     @State private var selectedDayKey: String?
     @State private var monthPickerPresentation: RouteArchiveMonthPickerPresentation?
     @State private var isOdometerPresented = false
+    @State private var dayPendingDeletion: String?
+    @State private var isDeleting = false
 
     init(
         store: RouteArchiveStore,
@@ -38,7 +40,8 @@ struct RouteArchiveScreen: View {
                 records: displayedMonthRecords,
                 displayedMonth: $displayedMonth,
                 selectedDayKey: $selectedDayKey,
-                onMonthTitleTap: presentMonthPicker
+                onMonthTitleTap: presentMonthPicker,
+                onDeleteDay: { if !store.isLoading { dayPendingDeletion = $0 } }
             )
 
             odometerCard
@@ -61,6 +64,28 @@ struct RouteArchiveScreen: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
             }
+        }
+        .disabled(isDeleting)
+        .alert("Удалить день из архива?", isPresented: Binding(
+            get: { dayPendingDeletion != nil }, set: { if !$0 { dayPendingDeletion = nil } }
+        )) {
+            Button("Удалить", role: .destructive) {
+                guard let date = dayPendingDeletion else { return }
+                isDeleting = true
+                Task {
+                    defer { isDeleting = false }
+                    do {
+                        try await routeStore.deleteArchivedDay(date)
+                        store.removeDeletedDay(date)
+                        if selectedDayKey == date { selectedDayKey = nil }
+                    } catch {
+                        store.errorMessage = appUserFacingErrorMessage(error, fallback: "Не удалось удалить день из архива.")
+                    }
+                }
+            }
+            Button("Отмена", role: .cancel) { }
+        } message: {
+            Text("День \(dayPendingDeletion ?? "") будет удалён из архива и исключён из последующих ГСМ-отчётов. Его можно будет добавить заново. Уже отправленные отчёты не изменятся.")
         }
         .navigationTitle("Все маршруты")
         .navigationBarTitleDisplayMode(.inline)
@@ -346,6 +371,7 @@ private struct RouteArchiveCalendar: View {
     @Binding var displayedMonth: Date
     @Binding var selectedDayKey: String?
     let onMonthTitleTap: () -> Void
+    let onDeleteDay: (String) -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 5), count: 7)
     private let weekdayTitles = ["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"]
@@ -445,7 +471,15 @@ private struct RouteArchiveCalendar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(record == nil)
+        .disabled(record == nil || records.isEmpty)
+        .contextMenu {
+            if record != nil {
+                Button("Удалить день из архива", systemImage: "trash", role: .destructive) {
+                    AppHaptics.trigger()
+                    onDeleteDay(key)
+                }
+            }
+        }
         .accessibilityLabel(accessibilityTitle(date: date, records: dayRecords))
     }
 

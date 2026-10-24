@@ -123,6 +123,20 @@ struct RouteDayService {
         )
     }
 
+    func fetchExcludedDates() async throws -> [String] {
+        guard let authToken, let base = v2RoutesURL() else { throw RouteDayServiceError.unauthorized }
+        let response = try await requestJSON(base.appendingPathComponent("exclusions"), authToken: authToken)
+        guard let root = response.json as? [String: Any], let dates = root["excludedDates"] as? [String] else {
+            throw RouteDayServiceError.invalidResponse("Сервер не подтвердил исключённые дни.")
+        }
+        return dates
+    }
+
+    func deleteDay(date: String) async throws {
+        guard let authToken, let base = v2RoutesURL() else { throw RouteDayServiceError.unauthorized }
+        _ = try await requestJSON(base.appendingPathComponent(date), method: "DELETE", authToken: authToken)
+    }
+
     func fetchAllDays(settings: RouteSettings) async throws -> [RouteDayRecord] {
         guard let authToken, let url = v2RoutesURL() else {
             throw RouteDayServiceError.unauthorized

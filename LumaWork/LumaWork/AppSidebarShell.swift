@@ -1070,6 +1070,12 @@ private struct AppSidebarSettingsPlaceholder: View {
                     tint: .green,
                     destination: .route
                 )
+                settingsNavigationLink(
+                    "Отправка ГСМ отчета",
+                    systemImage: "envelope.badge",
+                    tint: .blue,
+                    destination: .gsmDelivery
+                )
             }
 
             Section("Приложение") {
@@ -1168,6 +1174,8 @@ private struct AppSidebarSettingsPlaceholder: View {
                     routeStore: routeStore,
                     sessionStore: sessionStore
                 )
+            case .gsmDelivery:
+                GsmDeliverySettingsScreen(sessionStore: sessionStore)
             case .notifications:
                 NotificationSettingsScreen(sessionStore: sessionStore)
             case .screens:
@@ -1375,6 +1383,7 @@ private struct AppSidebarSettingsPlaceholder: View {
 private enum AppSidebarSettingsDestination: Hashable {
     case profile
     case gsmProfile
+    case gsmDelivery
     case route
     case notifications
     case screens

@@ -33,6 +33,8 @@ final class RouteLocalStorage {
     private let dailyMileageKey = "route.pwa.daily-mileages"
     private let appleMileageKey = "route.apple-map-mileages"
     private let defaults: UserDefaults
+    private let pendingRestoresKey: String
+    private let excludedDatesKey: String
     private let coordinateKey: String
     private var daysCache: [String: RouteDayRecord]?
     private var settingsCache: RouteSettings?
@@ -43,6 +45,8 @@ final class RouteLocalStorage {
 
     init(defaults: UserDefaults = .standard, cacheID: String? = nil) {
         self.defaults = defaults
+        self.pendingRestoresKey = "route.pending-restores." + (cacheID ?? "local")
+        self.excludedDatesKey = "route.excluded-dates." + (cacheID ?? "local")
         self.coordinateKey = "route.confirmed-coordinates." + (cacheID ?? "local")
     }
 
@@ -102,6 +106,53 @@ final class RouteLocalStorage {
             pendingDaysSave?.cancel()
             saveAllDaysImmediately(all)
         }
+    }
+
+    func isPendingRestore(_ date: String) -> Bool { (defaults.stringArray(forKey: pendingRestoresKey) ?? []).contains(date) }
+    func beginExplicitRestore(_ date: String) {
+        guard isExcluded(date) else { return }
+        var values = Set(defaults.stringArray(forKey: pendingRestoresKey) ?? [])
+        values.insert(date)
+        defaults.set(Array(values), forKey: pendingRestoresKey)
+    }
+    func finishExplicitRestore(_ date: String) {
+        let values = Set(defaults.stringArray(forKey: pendingRestoresKey) ?? []).subtracting([date])
+        defaults.set(Array(values), forKey: pendingRestoresKey)
+        setExcluded(date, excluded: false)
+    }
+
+    var hasExcludedDatesSnapshot: Bool { defaults.object(forKey: excludedDatesKey) != nil }
+    func isExcluded(_ date: String) -> Bool { (defaults.stringArray(forKey: excludedDatesKey) ?? []).contains(date) }
+    func setExcluded(_ date: String, excluded: Bool) {
+        var values = Set(defaults.stringArray(forKey: excludedDatesKey) ?? [])
+        if excluded { values.insert(date) } else { values.remove(date) }
+        defaults.set(Array(values), forKey: excludedDatesKey)
+    }
+    func syncExcludedDates(_ dates: [String]) {
+        defaults.set(dates, forKey: excludedDatesKey)
+        for date in dates {
+            guard !isPendingRestore(date) else { continue }
+            if loadAllDays().values.contains(where: { $0.date == date && $0.sent }) || loadQueue().contains(where: { $0.date == date }) {
+                deleteDay(date)
+            }
+        }
+    }
+
+    func deleteDay(_ date: String) {
+        finishExplicitRestore(date)
+        setExcluded(date, excluded: true)
+        var days = loadAllDays()
+        days = days.filter { $0.value.date != date }
+        saveAllDays(days)
+        pendingDaysSave?.cancel()
+        saveAllDaysImmediately(days)
+        for workType in RouteWorkType.allCases {
+            dequeue(date, workType: workType)
+            saveDailyMileage(nil, for: date, workType: workType)
+        }
+        var appleMileages = loadAppleMileages()
+        for workType in RouteWorkType.allCases { appleMileages.removeValue(forKey: workType.storageKey(for: date)) }
+        if let data = try? JSONEncoder().encode(appleMileages) { defaults.set(data, forKey: appleMileageKey) }
     }
 
     func loadAllDays() -> [String: RouteDayRecord] {
