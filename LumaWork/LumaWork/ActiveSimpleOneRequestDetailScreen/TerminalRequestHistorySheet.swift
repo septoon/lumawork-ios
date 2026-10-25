@@ -66,7 +66,7 @@ struct TerminalRequestHistorySheet: View {
                         } else {
                             ForEach(records) { record in
                                 historyRow(record)
-                                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                                     .listRowSeparator(.hidden)
                                     .listRowBackground(Color.clear)
                             }
