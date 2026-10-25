@@ -3,7 +3,6 @@ import SwiftUI
 struct TerminalRequestHistorySheet: View {
     @Environment(\.dismiss) private var dismiss
     let terminalID: String
-    let currentRequestID: String
     let simpleOneStore: SimpleOneRequestsStore
 
     @State private var store = SimpleOneTerminalHistoryStore()
@@ -18,7 +17,7 @@ struct TerminalRequestHistorySheet: View {
     private var records: [SimpleOneRequestRecord] {
         guard hasCurrentSnapshot else { return [] }
         return SimpleOneTerminalHistory.records(
-            store.records, terminalID: terminalID, excludingRequestID: currentRequestID,
+            store.records, terminalID: terminalID,
             showsReturnEquipment: showsReturnEquipment, showsExpertise: showsExpertise
         )
     }
@@ -59,7 +58,7 @@ struct TerminalRequestHistorySheet: View {
                             ContentUnavailableView(
                                 "История не найдена", systemImage: "clock.arrow.circlepath",
                                 description: Text(showsReturnEquipment && showsExpertise
-                                    ? "Предыдущих закрытых заявок с этим ID терминала нет."
+                                    ? "Закрытых заявок с этим ID терминала нет."
                                     : "С выбранными фильтрами заявок нет.")
                             )
                             .listRowBackground(Color.clear)
@@ -110,7 +109,7 @@ struct TerminalRequestHistorySheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task(id: "\(sessionID)|\(simpleOneStore.isAuthorized)|\(terminalID)|\(currentRequestID)|\(reloadRequest)") { await load() }
+        .task(id: "\(sessionID)|\(simpleOneStore.isAuthorized)|\(terminalID)|\(reloadRequest)") { await load() }
     }
 
     private func historyRow(_ record: SimpleOneRequestRecord) -> some View {

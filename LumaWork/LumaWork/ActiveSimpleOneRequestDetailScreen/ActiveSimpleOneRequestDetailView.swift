@@ -150,7 +150,6 @@ struct ActiveSimpleOneRequestDetailScreen: View {
             if let simpleOneStore {
                 TerminalRequestHistorySheet(
                     terminalID: warehouseTerminalID,
-                    currentRequestID: currentRecord.id,
                     simpleOneStore: simpleOneStore
                 )
             }

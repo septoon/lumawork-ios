@@ -14,7 +14,6 @@ nonisolated enum SimpleOneTerminalHistory {
     static func records(
         _ records: [SimpleOneRequestRecord],
         terminalID: String,
-        excludingRequestID: String = "",
         showsReturnEquipment: Bool = true,
         showsExpertise: Bool = true
     ) -> [SimpleOneRequestRecord] {
@@ -24,8 +23,7 @@ nonisolated enum SimpleOneTerminalHistory {
         return records.filter { record in
             guard showsReturnEquipment || !isCoordinationReturnEquipmentRequestType(record.requestType),
                   showsExpertise || !isCoordinationExpertiseRequestType(record.requestType) else { return false }
-            guard record.id != excludingRequestID, record.number != excludingRequestID,
-                  seen.insert(record.id).inserted else { return false }
+            guard seen.insert(record.id).inserted else { return false }
             let values = [record.terminalID] + (record.tableFields ?? []).filter {
                 ["id терминал", "id терминала"].contains($0.key.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))
             }.map(\.value)
