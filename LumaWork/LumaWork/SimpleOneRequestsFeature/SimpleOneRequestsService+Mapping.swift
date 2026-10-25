@@ -40,6 +40,7 @@ nonisolated extension SimpleOneRequestsService {
         let closureCode = firstNonEmpty(
             fieldDisplayString(
                 item,
+                "new_closure_code",
                 "close_code",
                 "closure_code",
                 "resolution_code",
@@ -53,6 +54,7 @@ nonisolated extension SimpleOneRequestsService {
         let resolution = firstNonEmpty(
             fieldString(
                 item,
+                "closure_notes",
                 "close_notes",
                 "resolution",
                 "solution",
@@ -142,9 +144,8 @@ nonisolated extension SimpleOneRequestsService {
                 "client_service",
                 "Клиентский сервис"
             ),
-            requestType: fieldString(
+            requestType: fieldRawValue(item, "multicard_request_type").map { fieldValueString($0) } ?? fieldString(
                 item,
-                "multicard_request_type",
                 "request_type",
                 "itsm_request_type",
                 "service_request_type",

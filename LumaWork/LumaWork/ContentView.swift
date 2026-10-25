@@ -149,12 +149,16 @@ struct ContentView: View {
                 isAuthenticated: sessionStore.isAuthenticated
             )
         }
-        .task(id: "\(stores.simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: stores.simpleOneStore))") {
-            await stores.groupClosedRequestsStore.loadCacheIfNeeded(simpleOneStore: stores.simpleOneStore)
+        .task(id: "\(stores.simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: stores.simpleOneStore))|\(sessionStore.userProfile.city ?? "")") {
+            await stores.groupClosedRequestsStore.loadCacheIfNeeded(
+                simpleOneStore: stores.simpleOneStore, region: CoordinationRegion(profileCity: sessionStore.userProfile.city)
+            )
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
-                stores.groupClosedRequestsStore.resumeIfNeeded(simpleOneStore: stores.simpleOneStore)
+                stores.groupClosedRequestsStore.resumeIfNeeded(
+                    simpleOneStore: stores.simpleOneStore, region: CoordinationRegion(profileCity: sessionStore.userProfile.city)
+                )
             }
             guard newPhase == .background else { return }
             isAdminUnlocked = false
@@ -253,7 +257,8 @@ struct ContentView: View {
                 simpleOneStore: stores.simpleOneStore,
                 lumaWorkAuthToken: sessionStore.authToken,
                 store: stores.coordinationStore,
-                groupClosedRequestsStore: stores.groupClosedRequestsStore
+                groupClosedRequestsStore: stores.groupClosedRequestsStore,
+                profileCity: sessionStore.userProfile.city
             )
         case .timeReport:
             TimeReportScreen(

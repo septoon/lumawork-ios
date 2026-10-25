@@ -29,6 +29,20 @@ nonisolated enum CoordinationRegion: String, CaseIterable, Codable, Identifiable
 
     static let defaultRegion: CoordinationRegion = .alushta
 
+    init?(profileCity: String?) {
+        var city = (profileCity ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "ru_RU"))
+        for prefix in ["город ", "г. ", "г.", "г "] where city.hasPrefix(prefix) {
+            city = String(city.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            break
+        }
+        guard let region = Self.allCases.first(where: {
+            $0.title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "ru_RU")) == city
+        }) else { return nil }
+        self = region
+    }
+
     var id: String { rawValue }
 
     var title: String {

@@ -4,6 +4,7 @@ struct CoordinationScreen: View {
     let simpleOneStore: SimpleOneRequestsStore
     let groupClosedRequestsStore: CoordinationGroupClosedRequestsStore
     let lumaWorkAuthToken: String?
+    let profileCity: String?
 
     @State private var store: CoordinationStore
     @State private var selectedSection: CoordinationSection = .distribution
@@ -15,11 +16,13 @@ struct CoordinationScreen: View {
         simpleOneStore: SimpleOneRequestsStore,
         lumaWorkAuthToken: String? = nil,
         store: CoordinationStore,
-        groupClosedRequestsStore: CoordinationGroupClosedRequestsStore
+        groupClosedRequestsStore: CoordinationGroupClosedRequestsStore,
+        profileCity: String?
     ) {
         self.simpleOneStore = simpleOneStore
         self.groupClosedRequestsStore = groupClosedRequestsStore
         self.lumaWorkAuthToken = lumaWorkAuthToken
+        self.profileCity = profileCity
         _store = State(initialValue: store)
     }
 
@@ -126,6 +129,7 @@ struct CoordinationScreen: View {
                     CoordinationGroupClosedRequestsScreen(
                         simpleOneStore: simpleOneStore,
                         store: groupClosedRequestsStore,
+                        region: CoordinationRegion(profileCity: profileCity),
                         lumaWorkAuthToken: lumaWorkAuthToken
                     )
                 } label: {
@@ -843,6 +847,7 @@ private struct CoordinationRequestDetailScreen: View {
         ActiveSimpleOneRequestDetailScreen(
             record: record,
             simpleOneAuthKey: simpleOneStore.browserAuthKey,
+            simpleOneStore: simpleOneStore,
             lumaWorkAuthToken: lumaWorkAuthToken
         )
         .background {

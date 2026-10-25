@@ -634,6 +634,7 @@ struct HomeScreen: View {
             ActiveSimpleOneRequestDetailScreen(
                 record: selectedActiveRequest,
                 simpleOneAuthKey: simpleOneStore.browserAuthKey,
+                simpleOneStore: simpleOneStore,
                 lumaWorkAuthToken: sessionStore.authToken
             )
         }

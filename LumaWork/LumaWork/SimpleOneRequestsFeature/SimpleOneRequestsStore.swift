@@ -362,6 +362,7 @@ final class SimpleOneRequestsStore {
     }
 
     func fetchGroupClosedRequestsPage(
+        region: CoordinationRegion,
         page: Int,
         perPage: Int,
         newestFirst: Bool = false
@@ -369,11 +370,22 @@ final class SimpleOneRequestsStore {
         guard let authKey else { throw SimpleOneServiceError.missingCredentials }
         do {
             return try await service.fetchGroupClosedRequestsPage(
+                region: region,
                 authKey: authKey,
                 page: page,
                 perPage: perPage,
                 newestFirst: newestFirst
             )
+        } catch SimpleOneServiceError.unauthorized {
+            signOut(clearUsername: false)
+            throw SimpleOneServiceError.unauthorized
+        }
+    }
+
+    func fetchTerminalHistory(terminalID: String) async throws -> [SimpleOneRequestRecord] {
+        guard let authKey else { throw SimpleOneServiceError.missingCredentials }
+        do {
+            return try await service.fetchTerminalHistory(terminalID: terminalID, authKey: authKey)
         } catch SimpleOneServiceError.unauthorized {
             signOut(clearUsername: false)
             throw SimpleOneServiceError.unauthorized

@@ -5,6 +5,18 @@ nonisolated enum SimpleOneRequestSource: String, Codable, Hashable, Sendable {
     case closed
 }
 
+nonisolated func localizedSimpleOneRequestType(_ raw: String) -> String {
+    switch raw.trimmingCharacters(in: .whitespacesAndNewlines) {
+    case "install": "Установка"
+    case "dismounting": "Демонтаж"
+    case "returnEquip": "Возврат ТО"
+    case "serviceStd": "Сервисная"
+    case "replacement": "Замена"
+    case "expertise": "Экспертиза"
+    default: raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 nonisolated struct SimpleOneRequestRecord: Codable, Hashable, Identifiable, Sendable {
     var id: String {
         sysID.isEmpty ? number : sysID
@@ -141,7 +153,7 @@ extension SimpleOneRequestRecord {
         return "\(prefix) \(max(minutes, 1)) мин."
     }
 
-    static func parseSimpleOneDate(_ raw: String) -> Date? {
+    nonisolated static func parseSimpleOneDate(_ raw: String) -> Date? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -157,7 +169,7 @@ extension SimpleOneRequestRecord {
         return date
     }
 
-    private static let simpleOneDateFormatters: [DateFormatter] = [
+    nonisolated private static let simpleOneDateFormatters: [DateFormatter] = [
         "yyyy-MM-dd HH:mm:ss",
         "yyyy-MM-dd HH:mm",
         "dd.MM.yyyy HH:mm:ss",

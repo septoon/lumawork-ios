@@ -9,6 +9,7 @@ extension ClosedRequestsScreen {
             let detailRecord = simpleOneDetailRecord(from: record)
             ActiveSimpleOneRequestDetailScreen(
                 record: detailRecord,
+                simpleOneStore: simpleOneStore,
                 lumaWorkAuthToken: sessionStore.authToken,
                 personalComment: personalComment(for: detailRecord),
                 onEditPersonalComment: { comment in
@@ -21,6 +22,7 @@ extension ClosedRequestsScreen {
                 ActiveSimpleOneRequestDetailScreen(
                     record: record,
                     simpleOneAuthKey: simpleOneStore.browserAuthKey,
+                    simpleOneStore: simpleOneStore,
                     lumaWorkAuthToken: sessionStore.authToken,
                     personalComment: personalComment(for: record),
                     onEditPersonalComment: { comment in
@@ -38,6 +40,7 @@ extension ClosedRequestsScreen {
         case .closedSimpleOne(let record):
             ActiveSimpleOneRequestDetailScreen(
                 record: record,
+                simpleOneStore: simpleOneStore,
                 lumaWorkAuthToken: sessionStore.authToken,
                 personalComment: personalComment(for: record),
                 onEditPersonalComment: { comment in

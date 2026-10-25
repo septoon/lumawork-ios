@@ -28,6 +28,7 @@ final class CoordinationGroupClosedRequestsStore {
 
     private let cacheKey: String
     private var sessionID: String?
+    private(set) var region: CoordinationRegion?
     private(set) var didLoadCache = false
     private var hasCachedSnapshot = false
     private var isIncremental = false
@@ -44,8 +45,8 @@ final class CoordinationGroupClosedRequestsStore {
         cacheKey = AppOfflineSnapshotStore.scopedKey("coordination-group-closed", userID: cacheID)
     }
 
-    func synchronizeSession(simpleOneStore: SimpleOneRequestsStore) {
-        let currentID = simpleOneStore.isAuthorized ? makeCoordinationSessionID(for: simpleOneStore) : nil
+    func synchronizeSession(simpleOneStore: SimpleOneRequestsStore, region: CoordinationRegion?) {
+        let currentID = scopeID(simpleOneStore: simpleOneStore, region: region)
         guard sessionID != currentID else { return }
         refreshTask?.cancel()
         refreshTask = nil
@@ -54,6 +55,7 @@ final class CoordinationGroupClosedRequestsStore {
         cacheTask = nil
         endBackgroundTime()
         sessionID = currentID
+        self.region = region
         didLoadCache = false
         hasCachedSnapshot = false
         isIncremental = false
@@ -70,34 +72,38 @@ final class CoordinationGroupClosedRequestsStore {
     }
 
     // The store owns the task: cancellation of a screen's .task only stops its wait.
-    func refresh(simpleOneStore: SimpleOneRequestsStore, forceFull: Bool = false) async {
-        await loadCacheIfNeeded(simpleOneStore: simpleOneStore)
+    func refresh(simpleOneStore: SimpleOneRequestsStore, region: CoordinationRegion?, forceFull: Bool = false) async {
+        await loadCacheIfNeeded(simpleOneStore: simpleOneStore, region: region)
         guard didLoadCache, sessionID != nil else { return }
         let currentSessionID = sessionID
         if forceFull { await refreshTask?.value }
         guard simpleOneStore.isAuthorized,
               sessionID == currentSessionID,
-              sessionID == makeCoordinationSessionID(for: simpleOneStore) else { return }
+              sessionID == scopeID(simpleOneStore: simpleOneStore, region: region) else { return }
         startRefresh(simpleOneStore: simpleOneStore, forceFull: forceFull)
         await refreshTask?.value
     }
 
-    func loadCacheIfNeeded(simpleOneStore: SimpleOneRequestsStore) async {
-        synchronizeSession(simpleOneStore: simpleOneStore)
+    func loadCacheIfNeeded(simpleOneStore: SimpleOneRequestsStore, region: CoordinationRegion?) async {
+        synchronizeSession(simpleOneStore: simpleOneStore, region: region)
         guard !didLoadCache, let sessionID else { return }
         if let cacheTask {
             await cacheTask.value
             return
         }
         let key = AppOfflineSnapshotStore.scopedKey(cacheKey, userID: sessionID)
+        // The old unscoped cache contained Alushta only. Never migrate it to another city.
+        let legacyKey = region == .alushta
+            ? AppOfflineSnapshotStore.scopedKey(cacheKey, userID: makeCoordinationSessionID(for: simpleOneStore)) : nil
         cacheTask = Task {
             let cached = await Task.detached(priority: .userInitiated) {
                 let snapshot = AppOfflineSnapshotStore.load(GroupClosedRequestsSnapshot.self, key: key)?.value
+                    ?? legacyKey.flatMap { AppOfflineSnapshotStore.load(GroupClosedRequestsSnapshot.self, key: $0)?.value }
                 return (snapshot, Self.sorted(Self.prepare(snapshot?.records ?? [])))
             }.value
             guard !Task.isCancelled, self.sessionID == sessionID,
                   simpleOneStore.isAuthorized,
-                  sessionID == makeCoordinationSessionID(for: simpleOneStore) else { return }
+                  sessionID == scopeID(simpleOneStore: simpleOneStore, region: region) else { return }
             if let snapshot = cached.0 {
                 publish(cached.1)
                 hasCachedSnapshot = true
@@ -114,8 +120,8 @@ final class CoordinationGroupClosedRequestsStore {
         await cacheTask?.value
     }
 
-    func resumeIfNeeded(simpleOneStore: SimpleOneRequestsStore) {
-        synchronizeSession(simpleOneStore: simpleOneStore)
+    func resumeIfNeeded(simpleOneStore: SimpleOneRequestsStore, region: CoordinationRegion?) {
+        synchronizeSession(simpleOneStore: simpleOneStore, region: region)
         guard isPaused, sessionID != nil else { return }
         startRefresh(simpleOneStore: simpleOneStore)
     }
@@ -137,7 +143,7 @@ final class CoordinationGroupClosedRequestsStore {
             endBackgroundTime()
             #if canImport(UIKit)
             if isPaused, UIApplication.shared.applicationState == .active {
-                resumeIfNeeded(simpleOneStore: simpleOneStore)
+                resumeIfNeeded(simpleOneStore: simpleOneStore, region: region)
             }
             #endif
         }
@@ -149,6 +155,7 @@ final class CoordinationGroupClosedRequestsStore {
         simpleOneStore: SimpleOneRequestsStore,
         forceFull: Bool
     ) async {
+        guard let region else { return }
         let key = AppOfflineSnapshotStore.scopedKey(cacheKey, userID: sessionID)
         do {
             // Preserve partial passes. A completed archive only scans the recently updated head.
@@ -163,7 +170,7 @@ final class CoordinationGroupClosedRequestsStore {
             while let page = nextPage {
                 try Task.checkCancellation()
                 let result = try await simpleOneStore.fetchGroupClosedRequestsPage(
-                    page: page, perPage: 100, newestFirst: isIncremental
+                    region: region, page: page, perPage: 100, newestFirst: isIncremental
                 )
                 guard isCurrent(requestID, simpleOneStore: simpleOneStore) else { return }
                 let newRecords = result.records.filter { seenIDs.insert($0.id).inserted }
@@ -219,9 +226,18 @@ final class CoordinationGroupClosedRequestsStore {
         }
     }
 
+    func isCurrentScope(simpleOneStore: SimpleOneRequestsStore, region: CoordinationRegion?) -> Bool {
+        sessionID != nil && sessionID == scopeID(simpleOneStore: simpleOneStore, region: region)
+    }
+
+    private func scopeID(simpleOneStore: SimpleOneRequestsStore, region: CoordinationRegion?) -> String? {
+        guard simpleOneStore.isAuthorized, let region, !region.companyLocationID.isEmpty else { return nil }
+        return "\(makeCoordinationSessionID(for: simpleOneStore))|city:\(region.companyLocationID)"
+    }
+
     private func isCurrent(_ requestID: UUID, simpleOneStore: SimpleOneRequestsStore) -> Bool {
         refreshID == requestID && !Task.isCancelled && simpleOneStore.isAuthorized
-            && sessionID == makeCoordinationSessionID(for: simpleOneStore)
+            && sessionID == scopeID(simpleOneStore: simpleOneStore, region: region)
     }
 
     private func publish(_ items: [GroupClosedRequestItem]) {

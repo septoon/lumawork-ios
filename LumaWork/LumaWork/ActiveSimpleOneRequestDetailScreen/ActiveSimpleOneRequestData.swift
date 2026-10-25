@@ -567,20 +567,7 @@ struct ActiveSimpleOneRequestData {
     }
 
     private func localizedRequestType(_ raw: String) -> String {
-        switch raw.trimmingCharacters(in: .whitespacesAndNewlines) {
-        case "install":
-            return "Установка"
-        case "dismounting":
-            return "Демонтаж"
-        case "returnEquip":
-            return "Возврат ТО"
-        case "serviceStd":
-            return "Сервисная"
-        case "replacement":
-            return "Замена"
-        default:
-            return raw
-        }
+        localizedSimpleOneRequestType(raw)
     }
 
     private var shouldShowDismantleSection: Bool {

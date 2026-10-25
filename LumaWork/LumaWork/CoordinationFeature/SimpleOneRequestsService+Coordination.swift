@@ -2,20 +2,34 @@ import Foundation
 
 nonisolated extension SimpleOneRequestsService {
     func fetchGroupClosedRequestsPage(
+        region: CoordinationRegion,
         authKey: String,
         page: Int,
         perPage: Int,
         newestFirst: Bool = false
     ) async throws -> SimpleOnePagedRequestRecords {
-        let order = newestFirst ? "^ORDERBYDESCsys_updated_at^ORDERBYDESCsys_id" : ""
         return try await fetchRequestsPage(
-            condition: "(company_location=171878330004108924^resolved_atNOTONopt:167653141215593053^stateNOT INon_hold@assigned@in_progress@escalated@returned_to_work@3@6@update_received)\(order)",
+            condition: groupClosedRequestsCondition(region: region, newestFirst: newestFirst),
             source: .closed,
             authKey: authKey,
             page: page,
             perPage: perPage,
             columns: Self.terminalSearchColumns
         )
+    }
+
+    func groupClosedRequestsCondition(region: CoordinationRegion, newestFirst: Bool = false) -> String {
+        let locationID = region.companyLocationID
+        guard !locationID.isEmpty, locationID.allSatisfy(\.isNumber) else {
+            return "sys_idISEMPTY^sys_idISNOTEMPTY"
+        }
+        let order = newestFirst ? "^ORDERBYDESCsys_updated_at^ORDERBYDESCsys_id" : ""
+        return "(company_location=\(locationID)^\(Self.groupClosedRequestsCriteria))\(order)"
+    }
+
+    static var groupClosedRequestsCriteria: String {
+        let optionID = AppConfig.resolveFirst("SIMPLEONE_RESOLVED_DATE_OPTION_ID") ?? "167653141215593053"
+        return "resolved_atNOTONopt:\(optionID)^stateNOT INon_hold@assigned@in_progress@escalated@returned_to_work@3@6@update_received"
     }
 
     func fetchCoordinationRequests(

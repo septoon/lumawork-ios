@@ -7,6 +7,7 @@ struct ActiveSimpleOneRequestDetailScreen: View {
 
     let record: SimpleOneRequestRecord
     var simpleOneAuthKey: String?
+    var simpleOneStore: SimpleOneRequestsStore?
     var lumaWorkAuthToken: String?
     var personalComment: ClientPersonalComment?
     var onEditPersonalComment: ((ClientPersonalComment) -> Void)?
@@ -20,10 +21,12 @@ struct ActiveSimpleOneRequestDetailScreen: View {
     @State private var browserDestination: SimpleOneBrowserDestination?
     @State private var companyLookupSelection: CompanyLookupSelection?
     @State private var hidesBottomActions = false
+    @State private var isHistoryPresented = false
 
     init(
         record: SimpleOneRequestRecord,
         simpleOneAuthKey: String? = nil,
+        simpleOneStore: SimpleOneRequestsStore? = nil,
         lumaWorkAuthToken: String? = nil,
         personalComment: ClientPersonalComment? = nil,
         onEditPersonalComment: ((ClientPersonalComment) -> Void)? = nil,
@@ -31,6 +34,7 @@ struct ActiveSimpleOneRequestDetailScreen: View {
     ) {
         self.record = record
         self.simpleOneAuthKey = simpleOneAuthKey
+        self.simpleOneStore = simpleOneStore
         self.lumaWorkAuthToken = lumaWorkAuthToken
         self.personalComment = personalComment
         self.onEditPersonalComment = onEditPersonalComment
@@ -141,6 +145,29 @@ struct ActiveSimpleOneRequestDetailScreen: View {
         }
         .sheet(item: $companyLookupSelection) { selection in
             CompanyLookupSheet(selection: selection, authToken: lumaWorkAuthToken)
+        }
+        .sheet(isPresented: $isHistoryPresented) {
+            if let simpleOneStore {
+                TerminalRequestHistorySheet(
+                    terminalID: warehouseTerminalID,
+                    currentRequestID: currentRecord.id,
+                    simpleOneStore: simpleOneStore
+                )
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if let simpleOneStore {
+                    Button {
+                        AppHaptics.trigger()
+                        isHistoryPresented = true
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                    .disabled(!simpleOneStore.isAuthorized || SimpleOneTerminalHistory.normalizedTerminalID(warehouseTerminalID).isEmpty)
+                    .accessibilityLabel("История выездов")
+                }
+            }
         }
         .navigationTitle("Детали")
         .navigationBarTitleDisplayMode(.inline)

@@ -25,7 +25,8 @@ nonisolated extension SimpleOneRequestsService {
         authKey: String,
         page: Int? = nil,
         perPage: Int? = nil,
-        columns: [String] = []
+        columns: [String] = [],
+        view: String? = nil
     ) async throws -> SimpleOnePagedRequestRecords {
         guard var components = URLComponents(url: baseURL.appendingPathComponent("list/itsm_request"), resolvingAgainstBaseURL: false) else {
             throw SimpleOneServiceError.invalidURL
@@ -33,6 +34,9 @@ nonisolated extension SimpleOneRequestsService {
         var queryItems = [
             URLQueryItem(name: "condition", value: condition)
         ]
+        if let view {
+            queryItems.append(URLQueryItem(name: "view", value: view))
+        }
         if let page {
             queryItems.append(URLQueryItem(name: "page", value: String(page)))
         }

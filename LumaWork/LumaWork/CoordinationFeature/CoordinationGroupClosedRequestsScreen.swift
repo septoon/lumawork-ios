@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 
 private struct GroupClosedRequestsFilterID: Hashable {
+    let scope: String
     let revision: UInt64
     let query: String
     let excludedTypes: Data
@@ -11,6 +12,7 @@ private struct GroupClosedRequestsFilterID: Hashable {
 struct CoordinationGroupClosedRequestsScreen: View {
     let simpleOneStore: SimpleOneRequestsStore
     let store: CoordinationGroupClosedRequestsStore
+    let region: CoordinationRegion?
     let lumaWorkAuthToken: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -19,6 +21,7 @@ struct CoordinationGroupClosedRequestsScreen: View {
     @State private var errorMessage: String?
     @State private var searchText = ""
     @State private var list = GroupClosedRequestsList()
+    @State private var listScope = ""
     @State private var referenceDate = Date()
     @State private var visibleDayID: String?
     @State private var selectedRequest: SimpleOneRequestRecord?
@@ -27,14 +30,25 @@ struct CoordinationGroupClosedRequestsScreen: View {
     init(
         simpleOneStore: SimpleOneRequestsStore,
         store: CoordinationGroupClosedRequestsStore,
+        region: CoordinationRegion?,
         lumaWorkAuthToken: String?
     ) {
         self.simpleOneStore = simpleOneStore
         self.store = store
+        self.region = region
         self.lumaWorkAuthToken = lumaWorkAuthToken
+        _listScope = State(initialValue: "\(makeCoordinationSessionID(for: simpleOneStore))|\(region?.rawValue ?? "")")
         _list = State(initialValue: GroupClosedRequestsList.build(
-            items: store.items, query: "", excludedTypes: excludedTypes, now: referenceDate
+            items: store.isCurrentScope(simpleOneStore: simpleOneStore, region: region) ? store.items : [], query: "", excludedTypes: excludedTypes, now: referenceDate
         ))
+    }
+
+    private var scope: String {
+        "\(makeCoordinationSessionID(for: simpleOneStore))|\(region?.rawValue ?? "")"
+    }
+
+    private var hasCurrentScope: Bool {
+        store.isCurrentScope(simpleOneStore: simpleOneStore, region: region)
     }
 
     private var excludedTypes: Set<String> {
@@ -47,6 +61,7 @@ struct CoordinationGroupClosedRequestsScreen: View {
 
     private var filterID: GroupClosedRequestsFilterID {
         GroupClosedRequestsFilterID(
+            scope: "\(makeCoordinationSessionID(for: simpleOneStore))|\(region?.rawValue ?? "")|\(hasCurrentScope)",
             revision: store.itemsRevision,
             query: searchText,
             excludedTypes: excludedTypesData,
@@ -67,7 +82,7 @@ struct CoordinationGroupClosedRequestsScreen: View {
 
     var body: some View {
         AppScreen(fixedTopContent: {
-            if simpleOneStore.isAuthorized, !list.days.isEmpty {
+            if simpleOneStore.isAuthorized, hasCurrentScope, listScope == scope, !list.days.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 12) {
                         Text("\(list.count) из \(store.totalCount ?? store.items.count)")
@@ -80,6 +95,11 @@ struct CoordinationGroupClosedRequestsScreen: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .background(AppTheme.primaryTint.opacity(0.10), in: Capsule())
+                    }
+                    if let region {
+                        Text(region.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.ink)
                     }
                     if let visibleDay {
                         ClosedRequestDayHeader(title: visibleDay.title, caption: visibleDay.caption)
@@ -95,10 +115,16 @@ struct CoordinationGroupClosedRequestsScreen: View {
                     message: "Войдите в SimpleOne на экране «Заявки».",
                     systemName: "person.crop.circle.badge.exclamationmark"
                 )
-            } else if let errorMessage = errorMessage ?? store.errorMessage {
+            } else if region == nil || region?.companyLocationID.isEmpty == true {
+                AppEmptyState(
+                    title: "Укажите город в профиле",
+                    message: "Для закрытых заявок группы нужен город инженера из списка поддерживаемых городов.",
+                    systemName: "mappin.and.ellipse"
+                )
+            } else if let errorMessage = errorMessage ?? (hasCurrentScope ? store.errorMessage : nil) {
                 AppNoticeBanner(text: errorMessage, tint: AppTheme.dangerTint, isCritical: true)
             }
-            if simpleOneStore.isAuthorized, store.isLoading {
+            if simpleOneStore.isAuthorized, hasCurrentScope, store.isLoading {
                 HStack(spacing: 10) {
                     ProgressView()
                     Text("Загружено \(store.loadedCount) из \(store.totalCount.map(String.init) ?? "…")")
@@ -108,7 +134,7 @@ struct CoordinationGroupClosedRequestsScreen: View {
             }
             if !simpleOneStore.isAuthorized {
                 EmptyView()
-            } else if !store.didLoadCache {
+            } else if !hasCurrentScope || listScope != scope || !store.didLoadCache {
                 EmptyView()
             } else if store.items.isEmpty, store.isLoading {
                 AppLoadingView(title: "Загружаю закрытые заявки группы")
@@ -150,7 +176,7 @@ struct CoordinationGroupClosedRequestsScreen: View {
         }
         .navigationTitle("Закрытые заявки группы")
         .navigationBarTitleDisplayMode(.inline)
-        .appNativeSearch(text: $searchText, prompt: "Поиск", isEnabled: simpleOneStore.isAuthorized)
+        .appNativeSearch(text: $searchText, prompt: "Поиск", isEnabled: simpleOneStore.isAuthorized && region != nil)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -173,23 +199,23 @@ struct CoordinationGroupClosedRequestsScreen: View {
                 .accessibilityLabel("Фильтр по типам заявок")
             }
         }
-        .refreshable { await store.refresh(simpleOneStore: simpleOneStore, forceFull: true) }
+        .refreshable { await store.refresh(simpleOneStore: simpleOneStore, region: region, forceFull: true) }
         .task(id: filterID) { await rebuildList() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
             referenceDate = Date()
         }
-        .task(id: "\(simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: simpleOneStore))|\(scenePhase)") {
+        .task(id: "\(simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: simpleOneStore))|\(region?.rawValue ?? "")|\(scenePhase)") {
             if simpleOneStore.isAuthorized {
                 guard scenePhase == .active else { return }
                 referenceDate = Date()
-                await store.refresh(simpleOneStore: simpleOneStore)
+                await store.refresh(simpleOneStore: simpleOneStore, region: region)
                 while !Task.isCancelled {
                     do { try await Task.sleep(for: .seconds(60)) }
                     catch { return }
-                    await store.refresh(simpleOneStore: simpleOneStore)
+                    await store.refresh(simpleOneStore: simpleOneStore, region: region)
                 }
             } else {
-                store.synchronizeSession(simpleOneStore: simpleOneStore)
+                store.synchronizeSession(simpleOneStore: simpleOneStore, region: region)
                 list = GroupClosedRequestsList()
             }
         }
@@ -197,6 +223,8 @@ struct CoordinationGroupClosedRequestsScreen: View {
             if let selectedRequest {
                 ActiveSimpleOneRequestDetailScreen(
                     record: selectedRequest,
+                    simpleOneAuthKey: simpleOneStore.browserAuthKey,
+                    simpleOneStore: simpleOneStore,
                     lumaWorkAuthToken: lumaWorkAuthToken
                 )
             }
@@ -296,15 +324,17 @@ struct CoordinationGroupClosedRequestsScreen: View {
     }
 
     private func rebuildList() async {
-        let snapshot = store.items
+        let currentScope = scope
+        let snapshot = hasCurrentScope ? store.items : []
         let query = searchText
         let excluded = excludedTypes
         let now = referenceDate
         let rebuilt = await Task.detached(priority: .userInitiated) {
             GroupClosedRequestsList.build(items: snapshot, query: query, excludedTypes: excluded, now: now)
         }.value
-        guard !Task.isCancelled, list != rebuilt else { return }
-        list = rebuilt
+        guard !Task.isCancelled, currentScope == scope else { return }
+        listScope = currentScope
+        if list != rebuilt { list = rebuilt }
     }
 
 }
