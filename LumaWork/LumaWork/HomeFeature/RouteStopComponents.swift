@@ -23,6 +23,7 @@ struct RouteTimelineCard: View {
     let onRemoveStop: (RouteStop) -> Void
     let onEndpointSelect: (RouteEndpointRole, RouteEndpointKind) -> Void
     let onCopyEndpoint: (RouteEndpointKind) -> Void
+    @ScaledMetric(relativeTo: .subheadline) private var endpointHeight = 44
 
     private var middleStops: [(offset: Int, element: RouteStop)] {
         Array(stops.enumerated().dropFirst().dropLast())
@@ -107,31 +108,37 @@ struct RouteTimelineCard: View {
         role: RouteEndpointRole,
         selected: RouteEndpointKind
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(AppTheme.ink)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onLongPressGesture {
-                    copyEndpointAddress(role)
-                }
-                .accessibilityHint("Удерживайте, чтобы скопировать адрес")
-                .accessibilityAction(named: Text("Скопировать адрес")) {
-                    copyEndpointAddress(role)
-                }
+        GeometryReader { geometry in
+            HStack(spacing: 12) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(AppTheme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onLongPressGesture {
+                        copyEndpointAddress(role)
+                    }
+                    .accessibilityHint("Удерживайте, чтобы скопировать адрес")
+                    .accessibilityAction(named: Text("Скопировать адрес")) {
+                        copyEndpointAddress(role)
+                    }
 
-            RouteEndpointPicker(
-                selected: selected,
-                isHomeAvailable: isHomeEndpointAvailable,
-                onCopy: onCopyEndpoint,
-                onSelect: { kind in
-                    AppHaptics.trigger()
-                    onEndpointSelect(role, kind)
-                }
-            )
+                RouteEndpointPicker(
+                    selected: selected,
+                    isHomeAvailable: isHomeEndpointAvailable,
+                    onCopy: onCopyEndpoint,
+                    onSelect: { kind in
+                        AppHaptics.trigger()
+                        onEndpointSelect(role, kind)
+                    }
+                )
+                .frame(width: min(240, geometry.size.width * 0.58), height: endpointHeight)
+            }
         }
-        .padding(.vertical, HomeLayout.routeEndpointSectionPadding)
+        .frame(height: endpointHeight)
+        .padding(.vertical, 12)
     }
 
     private func copyEndpointAddress(_ role: RouteEndpointRole) {
@@ -322,20 +329,31 @@ private struct RouteEndpointPicker: View {
     let isHomeAvailable: Bool
     let onCopy: (RouteEndpointKind) -> Void
     let onSelect: (RouteEndpointKind) -> Void
+    @Namespace private var selectionAnimation
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 8) {
-            ForEach(RouteEndpointKind.allCases) { kind in
-                RouteEndpointPickerButton(
-                    kind: kind,
-                    isSelected: selected == kind,
-                    isDisabled: kind == .home && !isHomeAvailable,
-                    onCopy: { onCopy(kind) }
-                ) {
-                    onSelect(kind)
+        GeometryReader { geometry in
+            HStack(spacing: 0) {
+                ForEach(RouteEndpointKind.allCases) { kind in
+                    RouteEndpointPickerButton(
+                        kind: kind,
+                        isSelected: selected == kind,
+                        isDisabled: kind == .home && !isHomeAvailable,
+                        selectionAnimation: selectionAnimation,
+                        onCopy: { onCopy(kind) }
+                    ) {
+                        onSelect(kind)
+                    }
+                    .frame(width: (geometry.size.width - 4) * (kind == .warehouse ? 0.54 : 0.46),
+                           height: geometry.size.height - 4)
                 }
             }
+            .padding(2)
         }
+        .background(AppTheme.subpanelSurface, in: Capsule())
+        .overlay(Capsule().stroke(AppTheme.border, lineWidth: 1))
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: selected)
     }
 }
 
@@ -343,36 +361,28 @@ private struct RouteEndpointPickerButton: View {
     let kind: RouteEndpointKind
     let isSelected: Bool
     let isDisabled: Bool
+    let selectionAnimation: Namespace.ID
     let onCopy: () -> Void
     let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: kind.systemImage)
-                    .font(.system(size: 17, weight: .semibold))
-                Text(kind.title)
-                    .font(.subheadline.weight(.bold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.86)
-            }
-            .foregroundStyle(isSelected ? Color.white : AppTheme.ink)
-            .frame(maxWidth: .infinity, minHeight: HomeLayout.routeEndpointHeight)
-            .background(
-                background,
-                in: RoundedRectangle(
-                    cornerRadius: HomeLayout.routeEndpointCornerRadius,
-                    style: .continuous
-                )
-            )
-            .overlay(
-                RoundedRectangle(
-                    cornerRadius: HomeLayout.routeEndpointCornerRadius,
-                    style: .continuous
-                )
-                .stroke(isSelected ? AppTheme.primaryTint.opacity(0.36) : AppTheme.border, lineWidth: 1)
-            )
-            .opacity(isDisabled ? 0.48 : 1)
+            Text(kind.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.86)
+                .foregroundStyle(isSelected ? selectedInk : AppTheme.mutedTint)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(colorScheme == .dark ? Color(red: 0.55, green: 0.90, blue: 0.68) : AppTheme.primaryTint)
+                            .matchedGeometryEffect(id: "route-endpoint", in: selectionAnimation)
+                    }
+                }
+                .contentShape(Capsule())
+                .opacity(isDisabled ? 0.48 : 1)
         }
         .buttonStyle(.plain)
         .highPriorityGesture(
@@ -381,15 +391,13 @@ private struct RouteEndpointPickerButton: View {
         )
         .disabled(isDisabled)
         .accessibilityLabel(kind.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityHint("Удерживайте, чтобы скопировать адрес")
         .accessibilityAction(named: Text("Скопировать адрес"), onCopy)
     }
 
-    private var background: AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(AppTheme.accentGradient)
-        }
-        return AnyShapeStyle(AppTheme.subpanelSurface)
+    private var selectedInk: Color {
+        colorScheme == .dark ? Color(red: 0.06, green: 0.12, blue: 0.09) : .white
     }
 }
 
