@@ -27,15 +27,16 @@ struct TerminalRequestHistorySheet: View {
         store.hasSnapshot && store.isCurrentScope(terminalID: terminalID, sessionID: sessionID)
     }
 
+    private var isLoading: Bool {
+        simpleOneStore.isAuthorized && (store.isLoading || !store.isCurrentScope(terminalID: terminalID, sessionID: sessionID))
+    }
+
     var body: some View {
         NavigationStack {
             Group {
                 if !simpleOneStore.isAuthorized {
                     ContentUnavailableView("SimpleOne не подключён", systemImage: "person.crop.circle.badge.exclamationmark")
-                } else if !hasCurrentSnapshot && (store.isLoading || !store.isCurrentScope(terminalID: terminalID, sessionID: sessionID)) {
-                    ProgressView("Загружаю историю выездов")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = store.errorMessage, !hasCurrentSnapshot {
+                } else if let error = store.errorMessage, !hasCurrentSnapshot, !isLoading {
                     ContentUnavailableView {
                         Label("Не удалось загрузить историю", systemImage: "exclamationmark.arrow.triangle.2.circlepath")
                     } description: {
@@ -47,20 +48,14 @@ struct TerminalRequestHistorySheet: View {
                 } else {
                     List {
                         Section {
-                            LabeledContent("ID терминала", value: terminalID)
-                                .textSelection(.enabled)
-                            if store.isLoading {
-                                Label { Text("Обновляю историю") } icon: { ProgressView() }
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            historyField("ID терминала", value: terminalID)
                             if let error = store.errorMessage {
                                 Text(error).font(.footnote).foregroundStyle(AppTheme.dangerTint)
                                 Button("Повторить") { reloadRequest += 1 }
                             }
                         }
 
-                        if records.isEmpty {
+                        if records.isEmpty && !isLoading {
                             ContentUnavailableView(
                                 "История не найдена", systemImage: "clock.arrow.circlepath",
                                 description: Text(showsReturnEquipment && showsExpertise
@@ -71,6 +66,9 @@ struct TerminalRequestHistorySheet: View {
                         } else {
                             ForEach(records) { record in
                                 historyRow(record)
+                                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
                             }
                         }
                     }
@@ -82,6 +80,13 @@ struct TerminalRequestHistorySheet: View {
             .navigationTitle("История выездов")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    if isLoading {
+                        CoordinationShimmerText(text: "История выездов", font: .headline, tint: AppTheme.ink)
+                    } else {
+                        Text("История выездов").font(.headline)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
@@ -111,22 +116,41 @@ struct TerminalRequestHistorySheet: View {
     private func historyRow(_ record: SimpleOneRequestRecord) -> some View {
         let detail = ActiveSimpleOneRequestData(record: record)
         let status = SimpleOneTerminalHistory.completionStatus(for: record)?.title ?? "Нет данных"
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                Text(detail.requestNumber)
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                ClosedRequestsScreen.RequestChip(text: status, style: .status(status))
+        let type = SimpleOneTerminalHistory.requestTypeTitle(for: record)
+        return ClosedRequestsScreen.SimpleOneActiveRequestCardContainer(
+            statusText: status, statusStyle: .closedStatus(status)
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    Text(detail.requestNumber)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(AppTheme.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ClosedRequestsScreen.RequestChip(text: type, style: .requestType(type))
+                }
+                historyField("Дата", value: SimpleOneTerminalHistory.date(for: record)?.formatted(
+                    .dateTime.day().month(.twoDigits).year().hour().minute().locale(Locale(identifier: "ru_RU"))
+                ) ?? "Не указана")
+                historyField("Исполнитель", value: record.assignedUser.isEmpty ? "Не указан" : record.assignedUser)
             }
-            LabeledContent("Дата", value: SimpleOneTerminalHistory.date(for: record)?.formatted(
-                .dateTime.day().month(.twoDigits).year().hour().minute().locale(Locale(identifier: "ru_RU"))
-            ) ?? "Не указана")
-            LabeledContent("Исполнитель", value: record.assignedUser.isEmpty ? "Не указан" : record.assignedUser)
-            LabeledContent("Тип заявки", value: SimpleOneTerminalHistory.requestTypeTitle(for: record))
         }
-        .font(.subheadline)
-        .padding(.vertical, 6)
         .textSelection(.enabled)
+    }
+
+    private func historyField(_ title: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.mutedTint)
+                .fixedSize(horizontal: true, vertical: false)
+            Spacer(minLength: 0)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppTheme.ink)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func load() async {
