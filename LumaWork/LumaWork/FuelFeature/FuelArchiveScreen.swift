@@ -6,6 +6,7 @@ struct FuelArchiveScreen: View {
 
     @State private var editingSelection: FuelRecordEditSelection?
     @State private var recordToDelete: FuelRecord?
+    @State private var receiptMonth: FuelReceiptMonth?
 
     private var records: [FuelRecord] {
         store.records.filter(FuelArchivePolicy.isArchived)
@@ -65,6 +66,9 @@ struct FuelArchiveScreen: View {
         .navigationTitle("Архив топлива")
         .navigationBarTitleDisplayMode(.inline)
         .appSidebarBackButton()
+        .sheet(item: $receiptMonth) { month in
+            FuelReceiptSheet(store: store.receiptStore, month: month.id)
+        }
         .sheet(item: $editingSelection) { selection in
             NavigationStack {
                 FuelRecordEditSheet(store: store, record: selection.record)
@@ -138,6 +142,10 @@ struct FuelArchiveScreen: View {
                 Text(AppFormatting.monthLabel(monthKey))
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(FuelUI.text)
+
+                FuelReceiptMonthButton(store: store.receiptStore, month: monthKey) {
+                    receiptMonth = FuelReceiptMonth(id: monthKey)
+                }
 
                 ForEach(Array(records.enumerated()), id: \.element.stableID) { index, record in
                     archivedRecordRow(record)

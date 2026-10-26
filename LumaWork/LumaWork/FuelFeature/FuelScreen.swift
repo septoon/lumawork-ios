@@ -17,6 +17,7 @@ struct FuelScreen: View {
     @State private var refuelViewInRubByMonth: [String: Bool] = [:]
     @State private var isImportPickerPresented = false
     @State private var importSheetRoute: FuelImportSheetRoute?
+    @State private var receiptMonth: FuelReceiptMonth?
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -35,6 +36,11 @@ struct FuelScreen: View {
 
                     if projection.summary.hasData, !filteredMonths.isEmpty {
                         monthlyDetailsSection
+                            .depthStackSecondary()
+                    }
+
+                    if !receiptOnlyMonths.isEmpty {
+                        receiptOnlyMonthsSection
                             .depthStackSecondary()
                     }
 
@@ -99,11 +105,16 @@ struct FuelScreen: View {
             updateProjection(for: store.records)
             await store.loadIfNeeded()
         }
+        .task { await store.receiptStore.load() }
         .onChange(of: store.records) { _, newValue in
             updateProjection(for: newValue)
         }
         .refreshable {
             await store.load()
+            await store.receiptStore.load()
+        }
+        .sheet(item: $receiptMonth) { month in
+            FuelReceiptSheet(store: store.receiptStore, month: month.id)
         }
         .sheet(item: $editorMode, onDismiss: closeEditor) { mode in
             NavigationStack {
@@ -325,6 +336,29 @@ struct FuelScreen: View {
         }
     }
 
+    private var receiptOnlyMonths: [String] {
+        FuelReceipt.monthsWithoutRecords(store.receiptStore.receipts, records: store.records)
+    }
+
+    private var receiptOnlyMonthsSection: some View {
+        FuelPanelCard {
+            Text("Чеки без записей")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(FuelUI.text)
+
+            ForEach(receiptOnlyMonths, id: \.self) { month in
+                FuelInsetCard {
+                    Text(AppFormatting.monthLabel(month))
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(FuelUI.text)
+                    FuelReceiptMonthButton(store: store.receiptStore, month: month) {
+                        receiptMonth = FuelReceiptMonth(id: month)
+                    }
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var yearSection: some View {
         if !projection.years.isEmpty {
@@ -406,6 +440,10 @@ struct FuelScreen: View {
                 }
             }
             .buttonStyle(.plain)
+
+            FuelReceiptMonthButton(store: store.receiptStore, month: month.key) {
+                receiptMonth = FuelReceiptMonth(id: month.key)
+            }
 
             if isExpanded {
                 Divider()

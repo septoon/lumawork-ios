@@ -71,6 +71,8 @@ struct FuelService {
         self.authToken = authToken
     }
 
+    var receiptAPI: FuelReceiptAPI { FuelReceiptAPI(config: config, authToken: authToken) }
+
     func fetchRecords() async throws -> [FuelRecord] {
         guard let authToken, let url = v2URL(path: "/api/v2/fuel") else {
             throw AppServiceError.message("Требуется авторизация.")
@@ -307,6 +309,7 @@ final class FuelStore {
 
     private let service: FuelService
     let importAPI: FuelImportAPI
+    let receiptStore: FuelReceiptStore
     private let cacheKey: String
     private let fuelTypesCacheKey: String
     private var loadTask: Task<Void, Never>?
@@ -330,6 +333,7 @@ final class FuelStore {
     init(service: FuelService, importAPI: FuelImportAPI, cacheID: String? = nil) {
         self.service = service
         self.importAPI = importAPI
+        receiptStore = FuelReceiptStore(api: service.receiptAPI, ownerID: cacheID)
         cacheKey = AppOfflineSnapshotStore.scopedKey("fuel", userID: cacheID)
         fuelTypesCacheKey = AppOfflineSnapshotStore.scopedKey("fuel-types", userID: cacheID)
         if let snapshot = AppOfflineSnapshotStore.load([FuelRecord].self, key: cacheKey) {
