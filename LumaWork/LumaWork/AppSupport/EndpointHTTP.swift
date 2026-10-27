@@ -147,7 +147,8 @@ struct HTTPClient {
         method: String = "GET",
         body: Any? = nil,
         authToken: String? = nil,
-        allowEmpty: Bool = true
+        allowEmpty: Bool = true,
+        timeoutInterval: TimeInterval = 20
     ) async throws -> HTTPResponse {
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -155,8 +156,9 @@ struct HTTPClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("no-cache", forHTTPHeaderField: "Pragma")
-        request.timeoutInterval = 20
+        request.timeoutInterval = timeoutInterval
         AppBuildIdentity.apply(to: &request)
+        if authToken != nil { AppDeviceIdentity.apply(to: &request) }
 
         if let authToken, !authToken.isEmpty {
             request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")

@@ -19,6 +19,9 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
     case replaceGsmTemplate = "gsmTemplate.replace"
     case viewUsers = "users.view"
     case notifyUsers = "users.notify"
+    case editUsers = "users.edit"
+    case revokeUserSessions = "users.sessions"
+    case sendUserReports = "users.reports"
     case blockUsers = "users.block"
     case manageUserPermissions = "users.permissions"
     case deleteUsers = "users.delete"
@@ -46,7 +49,10 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
         case .viewGsmTemplate: "Просмотр шаблона ГСМ"
         case .replaceGsmTemplate: "Замена шаблона ГСМ"
         case .viewUsers: "Просмотр пользователей"
-        case .notifyUsers: "Рассылка обновлений"
+        case .notifyUsers: "Письма пользователям"
+        case .editUsers: "Изменение почты"
+        case .revokeUserSessions: "Завершение сессий"
+        case .sendUserReports: "Отправка ГСМ-отчётов"
         case .blockUsers: "Блокировка пользователей"
         case .manageUserPermissions: "Роли и права"
         case .deleteUsers: "Удаление пользователей"
@@ -74,7 +80,10 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
         case .viewGsmTemplate: "Просмотр и скачивание шаблона ГСМ-отчёта"
         case .replaceGsmTemplate: "Проверка и установка нового XLTX-шаблона"
         case .viewUsers: "Список и карточки пользователей"
-        case .notifyUsers: "Письма об обновлении выбранному пользователю или устаревшим версиям"
+        case .notifyUsers: "Коды входа и письма об обновлении приложения"
+        case .editUsers: "Смена почты аккаунта с отзывом старых сессий"
+        case .revokeUserSessions: "Выход пользователя на всех устройствах и отзыв подключений"
+        case .sendUserReports: "Формирование и отправка отчёта на почту пользователя"
         case .blockUsers: "Временная блокировка и разблокировка"
         case .manageUserPermissions: "Назначение администраторов и разрешений"
         case .deleteUsers: "Полное удаление аккаунта и связанных данных"
@@ -98,7 +107,7 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
     var group: AdminPermissionGroup {
         switch self {
         case .viewOverview, .viewAuditLog, .viewGsmTemplate, .replaceGsmTemplate: .overview
-        case .viewUsers, .notifyUsers, .blockUsers, .manageUserPermissions, .deleteUsers: .users
+        case .viewUsers, .notifyUsers, .editUsers, .revokeUserSessions, .sendUserReports, .blockUsers, .manageUserPermissions, .deleteUsers: .users
         case .viewImages, .createImages, .editImages, .deleteImages: .images
         case .viewFeedback, .manageFeedback: .feedback
         case .viewAssistant, .manageAssistant: .assistant

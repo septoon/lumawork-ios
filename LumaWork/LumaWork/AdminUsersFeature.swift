@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import UIKit
 
 struct AdminUserRecord: Codable, Identifiable, Hashable {
     var id: String
@@ -16,6 +17,8 @@ struct AdminUserRecord: Codable, Identifiable, Hashable {
     var appBuild: String?
     var appVersionSeenAt: Date?
     var devices: [AdminUserDeviceRecord]?
+    var activeSessions: Int?
+    var recentGsmReports: [AdminUserGsmReport]?
     var isBlocked: Bool
     var blockedUntil: Date?
 
@@ -84,6 +87,35 @@ struct AdminUserDeviceRecord: Codable, Identifiable, Hashable {
         appBuild = UserProfileData.clean(adminString(raw, keys: ["appBuild"]))
         firstSeenAt = adminDate(raw, keys: ["firstSeenAt"])
         lastSeenAt = adminDate(raw, keys: ["lastSeenAt"])
+    }
+}
+
+struct AdminUserGsmReport: Codable, Identifiable, Hashable {
+    let id: String
+    let month: String
+    let status: String
+    let sentToEmail: String?
+    let createdAt: Date?
+    let completedAt: Date?
+
+    var statusTitle: String {
+        switch status {
+        case "SENT": "Отправлен"
+        case "FAILED": "Ошибка"
+        case "RUNNING": "Формируется"
+        case "QUEUED": "В очереди"
+        case "SKIPPED": "Пропущен"
+        default: status
+        }
+    }
+
+    init(raw: [String: Any]) {
+        id = adminString(raw, keys: ["id"])
+        month = adminString(raw, keys: ["month"])
+        status = adminString(raw, keys: ["status"])
+        sentToEmail = UserProfileData.clean(adminString(raw, keys: ["sentToEmail"]))
+        createdAt = adminDate(raw, keys: ["createdAt"])
+        completedAt = adminDate(raw, keys: ["completedAt"])
     }
 }
 
@@ -200,6 +232,29 @@ struct AdminUsersAPI {
         )
     }
 
+    func changeEmail(user: AdminUserRecord, email: String, token: String) async throws -> AdminUserRecord {
+        let response = try await http.request(
+            url(path: "/api/v2/admin/users/\(user.id)/email"), method: "PATCH",
+            body: ["email": email, "confirmationEmail": user.email], authToken: token
+        )
+        guard let raw = adminDictionary(from: response.json, keys: ["user"]) else {
+            throw AppServiceError.message("Сервер не вернул пользователя.")
+        }
+        return AdminUserRecord(raw: raw)
+    }
+
+    func performSupportAction(userID: String, action: AdminUserSupportAction, month: String, token: String) async throws {
+        let response = try await http.request(
+            url(path: "/api/v2/admin/users/\(userID)/\(action.endpoint)"), method: "POST",
+            body: action == .gsmReport ? ["month": month] : [:], authToken: token,
+            timeoutInterval: action == .gsmReport ? 210 : 30
+        )
+        let raw = response.json as? [String: Any] ?? [:]
+        if action == .gsmReport && (!(raw["success"] as? Bool ?? false) || !(raw["sent"] as? Bool ?? false)) {
+            throw AppServiceError.message("Отправка отчёта не подтверждена.")
+        }
+    }
+
     private func url(path: String) -> URL {
         baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
     }
@@ -250,12 +305,12 @@ final class AdminUsersStore {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            let previousDevices = Dictionary(uniqueKeysWithValues: users.compactMap { user in
-                user.devices.map { (user.id, $0) }
-            })
+            let previousUsers = Dictionary(uniqueKeysWithValues: users.map { ($0.id, $0) })
             users = try await api.fetchUsers(token: token).map { user in
                 var updated = user
-                updated.devices = updated.devices ?? previousDevices[user.id]
+                updated.devices = updated.devices ?? previousUsers[user.id]?.devices
+                updated.activeSessions = updated.activeSessions ?? previousUsers[user.id]?.activeSessions
+                updated.recentGsmReports = updated.recentGsmReports ?? previousUsers[user.id]?.recentGsmReports
                 return updated
             }
             persist()
@@ -357,6 +412,35 @@ final class AdminUsersStore {
         }
     }
 
+    func supportAction(user: AdminUserRecord, action: AdminUserSupportAction, email: String, month: String) async -> Bool {
+        guard !isLoading, let token, !token.isEmpty else { return false }
+        isLoading = true
+        errorMessage = nil
+        notice = nil
+        defer { isLoading = false }
+        do {
+            if action == .email {
+                replace(try await api.changeEmail(user: user, email: email, token: token))
+                notice = "Почта изменена. Пользователю нужно войти заново."
+            } else {
+                try await api.performSupportAction(userID: user.id, action: action, month: month, token: token)
+                switch action {
+                case .loginCode: notice = "Код входа отправлен на \(user.email)."
+                case .gsmReport: notice = "ГСМ-отчёт за \(month) отправлен на \(user.email)."
+                case .revokeSessions: notice = "Сессии завершены. Пользователю нужно войти заново."
+                case .email: break
+                }
+                _ = await refreshUser(user)
+            }
+            return true
+        } catch {
+            let actionError = appUserFacingErrorMessage(error)
+            if action == .gsmReport { _ = await refreshUser(user) }
+            errorMessage = actionError
+            return false
+        }
+    }
+
     private func mutate(
         notice successNotice: String,
         action: (String) async throws -> AdminUserRecord
@@ -385,6 +469,8 @@ final class AdminUsersStore {
         var updated = user
         if let index = users.firstIndex(where: { $0.id == user.id }) {
             updated.devices = updated.devices ?? users[index].devices
+            updated.activeSessions = updated.activeSessions ?? users[index].activeSessions
+            updated.recentGsmReports = updated.recentGsmReports ?? users[index].recentGsmReports
             users[index] = updated
         } else {
             users.append(updated)
@@ -1167,6 +1253,10 @@ private enum AdminUserSheetDestination: String, Identifiable {
     case access
     case blockUntil
     case delete
+    case email
+    case loginCode
+    case gsmReport
+    case revokeSessions
 
     var id: String { rawValue }
 }
@@ -1201,9 +1291,12 @@ private struct AdminUserDetailScreen: View {
                     ProfileAvatar(size: 62, avatarUrl: user.avatarUrl)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(user.displayName)
+                            .textSelection(.enabled)
                             .font(.title3.weight(.bold))
                             .foregroundStyle(AppTheme.ink)
                         Text(user.email)
+                            .textSelection(.enabled)
+                            .contextMenu { Button("Скопировать почту", systemImage: "doc.on.doc") { UIPasteboard.general.string = user.email } }
                             .font(.subheadline)
                             .foregroundStyle(AppTheme.mutedTint)
                         HStack(spacing: 8) {
@@ -1218,6 +1311,16 @@ private struct AdminUserDetailScreen: View {
                     }
                 }
             }
+
+            Button {
+                UIPasteboard.general.string = userSummary
+                AppHaptics.trigger()
+            } label: {
+                Label("Скопировать все данные", systemImage: "doc.on.doc")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.bordered)
 
             AdminInfoCard(rows: userInfoRows)
 
@@ -1257,11 +1360,41 @@ private struct AdminUserDetailScreen: View {
                     caption: user.isProtectedAdmin ? "Полный доступ владельца" : "Назначено: \(user.permissionSet.count)"
                 )
                 AdminPermissionsSummary(permissions: user.permissionSet)
+                    .textSelection(.enabled)
             }
 
-            if canNotify || canManageAccess || canBlock || canDelete {
+            if let reports = user.recentGsmReports, !reports.isEmpty {
+                AppSectionHeader(title: "Последние ГСМ-отчёты", caption: "Пять последних попыток формирования")
+                ForEach(reports) { report in
+                    AdminInfoCard(rows: [
+                        AdminInfoRow(title: "Период", value: report.month),
+                        AdminInfoRow(title: "Статус", value: report.statusTitle),
+                        report.sentToEmail.map { AdminInfoRow(title: "Получатель", value: $0) },
+                        adminFormattedDate(report.completedAt ?? report.createdAt).map { AdminInfoRow(title: "Дата", value: $0) }
+                    ].compactMap { $0 })
+                }
+            }
+
+            if canNotify || canEdit || canRevokeSessions || canSendReports || canManageAccess || canBlock || canDelete {
                 AppSectionHeader(title: "Управление")
                 VStack(spacing: 0) {
+                    if canNotify {
+                        actionRow("Отправить код входа", systemImage: "key.fill") { sheet = .loginCode }
+                            .disabled(user.effectiveIsBlocked)
+                        Divider().padding(.leading, 54)
+                    }
+                    if canSendReports {
+                        actionRow("Отправить ГСМ-отчёт", systemImage: "envelope.fill") { sheet = .gsmReport }
+                        Divider().padding(.leading, 54)
+                    }
+                    if canEdit {
+                        actionRow("Изменить почту", systemImage: "at") { sheet = .email }
+                        Divider().padding(.leading, 54)
+                    }
+                    if canRevokeSessions {
+                        actionRow("Выйти со всех устройств", systemImage: "rectangle.portrait.and.arrow.right") { sheet = .revokeSessions }
+                        Divider().padding(.leading, 54)
+                    }
                     if canNotify {
                         actionRow("Сообщить об обновлении", systemImage: "envelope.badge") {
                             sheet = .updateEmail
@@ -1310,6 +1443,8 @@ private struct AdminUserDetailScreen: View {
                 .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
             }
 
+            if store.isLoading { ProgressView("Выполняется действие") }
+            if let notice = store.notice { AppNoticeBanner(text: notice, tint: AppTheme.primaryTint) }
             if let error = store.errorMessage {
                 AppNoticeBanner(text: error, tint: AppTheme.dangerTint, isCritical: true)
             }
@@ -1331,6 +1466,14 @@ private struct AdminUserDetailScreen: View {
         .sheet(item: $sheet) { destination in
             Group {
                 switch destination {
+                case .email:
+                    AdminUserSupportSheet(user: user, store: store, action: .email)
+                case .loginCode:
+                    AdminUserSupportSheet(user: user, store: store, action: .loginCode)
+                case .gsmReport:
+                    AdminUserSupportSheet(user: user, store: store, action: .gsmReport)
+                case .revokeSessions:
+                    AdminUserSupportSheet(user: user, store: store, action: .revokeSessions)
                 case .updateEmail:
                     AdminUpdateEmailSheet(initialTarget: .user(user.id), store: store)
                 case .access:
@@ -1350,6 +1493,7 @@ private struct AdminUserDetailScreen: View {
         .onChange(of: store.users) { _, users in
             if let updated = users.first(where: { $0.id == user.id }) { user = updated }
         }
+        .refreshable { await refreshUser() }
         .task { await refreshUser() }
     }
 
@@ -1373,6 +1517,28 @@ private struct AdminUserDetailScreen: View {
             adminFormattedDate(device.lastSeenAt).map { AdminInfoRow(title: "Последний запуск", value: $0) }
         ].compactMap { $0 }
     }
+    private var canEdit: Bool { isMutableTarget && permissions.contains(.editUsers) }
+    private var canRevokeSessions: Bool { isMutableTarget && permissions.contains(.revokeUserSessions) }
+    private var canSendReports: Bool { permissions.contains(.sendUserReports) }
+
+    private var userSummary: String {
+        var rows = [AdminInfoRow(title: "Имя", value: user.displayName), AdminInfoRow(title: "Почта", value: user.email)]
+        rows += userInfoRows + userProfileRows + userVehicleRows
+        var text = rows.map { "\($0.title): \($0.value)" }.joined(separator: "\n")
+        for device in user.devices ?? [] {
+            text += "\n\nУстройство\n" + deviceInfoRows(device).map { "\($0.title): \($0.value)" }.joined(separator: "\n")
+        }
+        if user.isAdmin {
+            text += "\n\nПрава: " + AdminPermission.allCases.filter { user.permissionSet.contains($0) }.map(\.title).joined(separator: ", ")
+        }
+        for report in user.recentGsmReports ?? [] {
+            text += "\n\nГСМ \(report.month): \(report.statusTitle)"
+            if let recipient = report.sentToEmail { text += "\nПолучатель: \(recipient)" }
+            if let date = adminFormattedDate(report.completedAt ?? report.createdAt) { text += "\nДата: \(date)" }
+        }
+        return text
+    }
+
     private var canManageAccess: Bool { isMutableTarget && permissions.contains(.manageUserPermissions) }
     private var canNotify: Bool { permissions.contains(.notifyUsers) }
     private var canBlock: Bool { isMutableTarget && permissions.contains(.blockUsers) }
@@ -1390,6 +1556,8 @@ private struct AdminUserDetailScreen: View {
 
     private var userInfoRows: [AdminInfoRow] {
         [
+            AdminInfoRow(title: "ID пользователя", value: user.id),
+            user.activeSessions.map { AdminInfoRow(title: "Активных сессий", value: $0.formatted()) },
             adminFormattedDate(user.registeredAt).map { AdminInfoRow(title: "Зарегистрирован", value: $0) },
             adminFormattedDate(user.lastActiveAt).map { AdminInfoRow(title: "Последняя активность", value: $0) },
             AdminInfoRow(title: "Версия приложения", value: user.appVersionDisplay),
@@ -1573,7 +1741,7 @@ private struct AdminUserAccessSheet: View {
                     if permission == .viewOverview { selectedPermissions.remove(.viewAuditLog) }
                     if permission == .viewGsmTemplate { selectedPermissions.remove(.replaceGsmTemplate) }
                     if permission == .viewUsers {
-                        selectedPermissions.subtract([.blockUsers, .manageUserPermissions, .deleteUsers])
+                        selectedPermissions.subtract([.notifyUsers, .editUsers, .revokeUserSessions, .sendUserReports, .blockUsers, .manageUserPermissions, .deleteUsers])
                     }
                     if permission == .viewImages {
                         selectedPermissions.subtract([.createImages, .editImages, .deleteImages])
@@ -1754,7 +1922,26 @@ private struct AdminInfoCard: View {
         AppCard {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 { Divider() }
-                AppStatRow(title: row.title, value: row.value)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
+                        Text(row.title).foregroundStyle(AppTheme.mutedTint).fixedSize(horizontal: true, vertical: false)
+                        Spacer(minLength: 8)
+                        Text(row.value).fontWeight(.semibold).multilineTextAlignment(.trailing).fixedSize(horizontal: true, vertical: false)
+                    }
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(row.title).foregroundStyle(AppTheme.mutedTint)
+                        Text(row.value).fontWeight(.semibold)
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 5)
+                .textSelection(.enabled)
+                .contextMenu {
+                    Button("Скопировать значение", systemImage: "doc.on.doc") { UIPasteboard.general.string = row.value }
+                    Button("Скопировать с названием", systemImage: "text.badge.plus") { UIPasteboard.general.string = "\(row.title): \(row.value)" }
+                }
             }
         }
     }
@@ -1806,6 +1993,8 @@ private extension AdminUserRecord {
         appVersion = adminString(raw, keys: ["appVersion", "app_version", "lastAppVersion"])
         appBuild = adminString(raw, keys: ["appBuild", "app_build", "lastAppBuild"])
         appVersionSeenAt = adminDate(raw, keys: ["appVersionSeenAt", "app_version_seen_at", "lastAppSeenAt"])
+        activeSessions = (raw["activeSessions"] as? NSNumber)?.intValue
+        recentGsmReports = (raw["recentGsmReports"] as? [[String: Any]])?.map(AdminUserGsmReport.init(raw:))
         devices = (raw["devices"] as? [[String: Any]])?.compactMap { AdminUserDeviceRecord(raw: $0) }
         isBlocked = adminBool(raw, keys: ["isBlocked", "is_blocked", "blocked", "disabled"])
         blockedUntil = adminDate(raw, keys: ["blockedUntil", "blocked_until", "blockedTo", "blocked_to"])
