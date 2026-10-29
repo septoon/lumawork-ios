@@ -31,6 +31,7 @@ final class AppDataStores {
     let workDocumentsStore: WorkDocumentsStore
     let navigationVisibilityStore: AppNavigationVisibilityStore
 
+    private var protectedIdentity: SimpleOneAccessSnapshot?
     private(set) var isHomeInitialLoading: Bool
 
     convenience init(sessionStore: AppSessionStore) {
@@ -85,7 +86,7 @@ final class AppDataStores {
             cacheID: userID
         )
         wikiStore = WikiStore(
-            service: WikiAPI(config: config),
+            service: WikiAPI(config: config, authToken: authToken),
             cacheID: userID
         )
         ftpStore = FTPStore(
@@ -122,6 +123,19 @@ final class AppDataStores {
         )
         navigationVisibilityStore = AppNavigationVisibilityStore()
         isHomeInitialLoading = simpleOneStore.needsInitialSnapshot
+        protectedIdentity = try? SimpleOneProtectedAccess.capture()
+    }
+
+    func synchronizeProtectedAccess() {
+        simpleOneStore.reconcileStoredAuthorization()
+        let identity = try? SimpleOneProtectedAccess.capture()
+        guard identity != protectedIdentity else { return }
+        protectedIdentity = identity
+        wikiStore.clearProtectedState(); ftpStore.clearProtectedState(); assistantStore.clearProtectedState()
+        FTPBackgroundDownloadManager.shared.revokeUnauthorized()
+        if identity != nil {
+            wikiStore.restoreProtectedCache(); ftpStore.restoreProtectedCache(); assistantStore.restoreProtectedCache()
+        }
     }
 
     func resolveHomeInitialLoading(isOnline: Bool) async {

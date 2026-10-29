@@ -2,6 +2,7 @@ import Foundation
 import Security
 
 struct SimpleOneSessionKeychain {
+    private(set) static var generation = UUID()
     private static let service = "LumaWork.SimpleOne"
     private static let account = "auth"
 
@@ -38,6 +39,8 @@ struct SimpleOneSessionKeychain {
 
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecSuccess {
+            generation = UUID()
+            NotificationCenter.default.post(name: .simpleOneSessionChanged, object: nil)
             return
         }
         if status != errSecItemNotFound {
@@ -51,6 +54,8 @@ struct SimpleOneSessionKeychain {
         guard addStatus == errSecSuccess else {
             throw SimpleOneServiceError.server("Не удалось сохранить сессию SimpleOne.")
         }
+        generation = UUID()
+        NotificationCenter.default.post(name: .simpleOneSessionChanged, object: nil)
     }
 
     static func deleteAuthKey() {
@@ -60,5 +65,7 @@ struct SimpleOneSessionKeychain {
             kSecAttrAccount as String: account
         ]
         SecItemDelete(query as CFDictionary)
+        generation = UUID()
+        NotificationCenter.default.post(name: .simpleOneSessionChanged, object: nil)
     }
 }

@@ -27,6 +27,7 @@ final class AssistantStore {
 
     private let api: AssistantAPI
     private let toolExecutor: AssistantLocalToolExecutor
+    private let ownerID: String
     private let cacheKey: String
     @ObservationIgnored private var generationTask: Task<Void, Never>?
 
@@ -76,9 +77,17 @@ final class AssistantStore {
         userID: String?,
         toolExecutor: AssistantLocalToolExecutor
     ) {
+        self.ownerID = userID ?? ""
         self.api = api
         self.toolExecutor = toolExecutor
         cacheKey = AppOfflineSnapshotStore.scopedKey("assistant-state-v1", userID: userID)
+        restoreProtectedCache()
+    }
+
+    private var hasAccess: Bool { (try? SimpleOneProtectedAccess.capture(ownerID: ownerID)) != nil }
+
+    func restoreProtectedCache() {
+        guard hasAccess else { return }
         if let snapshot = AppOfflineSnapshotStore.load(CachedState.self, key: cacheKey) {
             conversations = snapshot.value.conversations
             conversationID = snapshot.value.conversationID
@@ -86,7 +95,15 @@ final class AssistantStore {
         }
     }
 
+    func clearProtectedState() {
+        generationTask?.cancel(); generationTask = nil; activeRequestID = nil; retryableRequest = nil
+        messageLoadGeneration += 1
+        conversations = []; messages = []; conversationID = UUID()
+        isSending = false; isLoadingMessages = false; isLoadingHistory = false; activity = nil; errorMessage = nil
+    }
+
     func loadConversations(force: Bool = false) async {
+        guard hasAccess else { clearProtectedState(); return }
         guard !isLoadingHistory else { return }
         guard force || conversations.isEmpty else {
             Task { await refreshConversationsQuietly() }
@@ -95,7 +112,9 @@ final class AssistantStore {
         isLoadingHistory = true
         defer { isLoadingHistory = false }
         do {
-            conversations = try await api.conversations().conversations
+            let loaded = try await api.conversations().conversations
+            guard hasAccess else { clearProtectedState(); return }
+            conversations = loaded
             saveCache()
         } catch is CancellationError {
         } catch {
@@ -106,6 +125,7 @@ final class AssistantStore {
     }
 
     func loadCurrentMessages(force: Bool = false) async {
+        guard hasAccess else { clearProtectedState(); return }
         let targetConversationID = conversationID
         guard conversations.contains(where: { $0.id == targetConversationID }) else { return }
         guard force || messages.isEmpty else { return }
@@ -113,6 +133,7 @@ final class AssistantStore {
     }
 
     func openConversation(_ id: UUID) async -> Bool {
+        guard hasAccess else { clearProtectedState(); return false }
         guard id != conversationID || messages.isEmpty else { return true }
         stopGeneration()
         retryableRequest = nil
@@ -122,6 +143,7 @@ final class AssistantStore {
         messages = []
         errorMessage = nil
         let opened = await loadMessages(conversationID: id)
+        guard hasAccess else { clearProtectedState(); return false }
         guard opened else {
             conversationID = previousConversationID
             messages = previousMessages
@@ -132,6 +154,7 @@ final class AssistantStore {
     }
 
     func startNewConversation() {
+        guard hasAccess else { clearProtectedState(); return }
         stopGeneration()
         retryableRequest = nil
         messageLoadGeneration += 1
@@ -155,6 +178,7 @@ final class AssistantStore {
 
     @discardableResult
     func deleteConversation(_ id: UUID) async -> Bool {
+        guard hasAccess else { clearProtectedState(); return false }
         do {
             try await api.deleteConversation(id)
             removeLocalConversation(id)
@@ -176,6 +200,7 @@ final class AssistantStore {
     }
 
     func renameConversation(_ id: UUID, title rawTitle: String) async -> Bool {
+        guard hasAccess else { clearProtectedState(); return false }
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return false }
         do {
@@ -201,6 +226,7 @@ final class AssistantStore {
         document: AssistantPreparedDocumentPayload? = nil,
         currentScreen: String = "assistant"
     ) async {
+        guard hasAccess else { clearProtectedState(); return }
         let message = rawMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isSending, !isConversationFull, !message.isEmpty || image != nil || document != nil else { return }
 
@@ -254,6 +280,7 @@ final class AssistantStore {
     }
 
     func retryLastFailedRequest() async {
+        guard hasAccess else { clearProtectedState(); return }
         guard !isSending,
               let request = retryableRequest,
               request.conversationID == conversationID else { return }
@@ -435,7 +462,7 @@ final class AssistantStore {
     }
 
     private func isActive(_ requestID: UUID, conversationID targetConversationID: UUID) -> Bool {
-        ownsActiveRequest(requestID, conversationID: targetConversationID) && !Task.isCancelled
+        hasAccess && ownsActiveRequest(requestID, conversationID: targetConversationID) && !Task.isCancelled
     }
 
     private func ownsActiveRequest(_ requestID: UUID, conversationID targetConversationID: UUID) -> Bool {
@@ -612,11 +639,14 @@ final class AssistantStore {
     }
 
     private func refreshConversationsQuietly() async {
+        guard hasAccess else { clearProtectedState(); return }
         guard !isLoadingHistory else { return }
         isLoadingHistory = true
         defer { isLoadingHistory = false }
         do {
-            conversations = try await api.conversations().conversations
+            let loaded = try await api.conversations().conversations
+            guard hasAccess else { clearProtectedState(); return }
+            conversations = loaded
             saveCache()
         } catch {
             // Cache remains visible; background refresh errors are intentionally quiet.
@@ -624,6 +654,7 @@ final class AssistantStore {
     }
 
     private func loadMessages(conversationID targetConversationID: UUID) async -> Bool {
+        guard hasAccess else { clearProtectedState(); return false }
         messageLoadGeneration += 1
         let generation = messageLoadGeneration
         isLoadingMessages = true
@@ -634,7 +665,7 @@ final class AssistantStore {
         }
         do {
             let page = try await api.messages(conversationID: targetConversationID)
-            guard messageLoadGeneration == generation, conversationID == targetConversationID else { return false }
+            guard hasAccess, messageLoadGeneration == generation, conversationID == targetConversationID else { return false }
             messages = page.messages
             applyStatus(page.conversation, conversationID: targetConversationID)
             errorMessage = nil
@@ -643,7 +674,7 @@ final class AssistantStore {
         } catch is CancellationError {
             return false
         } catch {
-            guard messageLoadGeneration == generation, conversationID == targetConversationID else { return false }
+            guard hasAccess, messageLoadGeneration == generation, conversationID == targetConversationID else { return false }
             let message = Self.isNotFound(error)
                 ? "Этот чат больше недоступен. История обновлена."
                 : Self.inlineErrorMessage(error)
@@ -698,6 +729,7 @@ final class AssistantStore {
     }
 
     private func saveCache() {
+        guard hasAccess else { clearProtectedState(); return }
         AppOfflineSnapshotStore.save(
             CachedState(
                 conversations: Array(conversations.prefix(30)),
@@ -725,6 +757,7 @@ final class AssistantLocalToolExecutor {
     }
 
     func execute(_ requests: [AssistantAPIToolRequest]) async throws -> [AssistantAPIToolResult] {
+        let access = try SimpleOneProtectedAccess.capture()
         var results: [AssistantAPIToolResult] = []
         for request in requests.prefix(4) {
             let payload: AssistantJSONValue
@@ -740,6 +773,7 @@ final class AssistantLocalToolExecutor {
             default:
                 throw AppServiceError.message("Помощник запросил недоступный источник данных.")
             }
+            try SimpleOneProtectedAccess.validate(access)
             results.append(AssistantAPIToolResult(name: request.name, payload: payload))
         }
         return results

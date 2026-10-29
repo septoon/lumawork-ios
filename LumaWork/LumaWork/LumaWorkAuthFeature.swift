@@ -815,6 +815,7 @@ struct LumaWorkSessionKeychain {
     }
 
     static func saveSession(_ session: AppSession) throws {
+        if readSession()?.user.id != session.user.id { SimpleOneSessionKeychain.deleteAuthKey() }
         let data = try JSONEncoder().encode(session)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -843,6 +844,7 @@ struct LumaWorkSessionKeychain {
     }
 
     static func deleteSession() {
+        SimpleOneSessionKeychain.deleteAuthKey()
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

@@ -110,13 +110,20 @@ final class FTPBackgroundDownloadManager: NSObject {
         delegateQueue.maxConcurrentOperationCount = 1
         return URLSession(configuration: configuration, delegate: self, delegateQueue: delegateQueue)
     }()
+    @ObservationIgnored private var accessObserver: NSObjectProtocol?
+    @ObservationIgnored private var exportLeases: [UUID: SimpleOneAccessLease] = [:]
     @ObservationIgnored private var pendingFinalizations = 0
     @ObservationIgnored private var backgroundEventsAreWaiting = false
 
     private override init() {
         records = Self.loadRecords()
         super.init()
+        accessObserver = NotificationCenter.default.addObserver(forName: .simpleOneSessionChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.revokeUnauthorized() }
+        }
+        migrateManagedDownloads()
         _ = session
+        revokeUnauthorized()
         restoreTasks()
     }
 
@@ -128,6 +135,9 @@ final class FTPBackgroundDownloadManager: NSObject {
         destinationDirectory: URL?,
         ownerID: String
     ) throws {
+        let access = try SimpleOneProtectedAccess.capture(ownerID: ownerID)
+        guard request.value(forHTTPHeaderField: "X-SimpleOne-Auth") == access.authKey,
+              request.value(forHTTPHeaderField: "Authorization") == "Bearer \(access.appToken)" else { throw SimpleOneAccessDenied() }
         guard !records.contains(where: {
             $0.ownerID == ownerID && $0.remotePath == remotePath && $0.state.isActive
         }) else {
@@ -179,7 +189,8 @@ final class FTPBackgroundDownloadManager: NSObject {
     }
 
     func records(ownerID: String) -> [FTPDownloadRecord] {
-        records
+        guard (try? SimpleOneProtectedAccess.capture(ownerID: ownerID)) != nil else { return [] }
+        return records
             .filter { $0.ownerID == ownerID }
             .sorted { $0.createdAt > $1.createdAt }
     }
@@ -235,6 +246,7 @@ final class FTPBackgroundDownloadManager: NSObject {
     }
 
     func deleteSavedDownload(recordID: UUID, ownerID: String) throws {
+        _ = try SimpleOneProtectedAccess.capture(ownerID: ownerID)
         guard let index = records.firstIndex(where: {
             $0.id == recordID && $0.ownerID == ownerID &&
                 $0.action == .download && $0.state == .completed
@@ -255,6 +267,7 @@ final class FTPBackgroundDownloadManager: NSObject {
     }
 
     func consumePendingShare(ownerID: String) -> FTPDownloadedFile? {
+        guard (try? SimpleOneProtectedAccess.capture(ownerID: ownerID)) != nil else { return nil }
         guard let index = records.firstIndex(where: {
             $0.ownerID == ownerID &&
                 $0.action == .share &&
@@ -271,6 +284,7 @@ final class FTPBackgroundDownloadManager: NSObject {
 
     func downloadedFile(recordID: UUID) -> FTPDownloadedFile? {
         guard let record = records.first(where: { $0.id == recordID }),
+              (try? SimpleOneProtectedAccess.capture(ownerID: record.ownerID)) != nil,
               record.state == .completed,
               let localFilePath = record.localFilePath,
               FileManager.default.fileExists(atPath: localFilePath) else {
@@ -288,13 +302,55 @@ final class FTPBackgroundDownloadManager: NSObject {
     }
 
     func filesDirectoryURL(recordID: UUID? = nil) -> URL? {
-        if let recordID,
-           let record = records.first(where: { $0.id == recordID }),
-           record.action != .share,
-           let localFilePath = record.localFilePath {
-            return URL(fileURLWithPath: localFilePath).deletingLastPathComponent()
+        guard let recordID, let record = records.first(where: { $0.id == recordID }),
+              (try? SimpleOneProtectedAccess.capture(ownerID: record.ownerID)) != nil,
+              record.action == .saveToFiles, let path = record.localFilePath else { return nil }
+        return URL(fileURLWithPath: path).deletingLastPathComponent()
+    }
+
+    func revokeUnauthorized() {
+        exportLeases.values.forEach { $0.revoke() }
+        for index in records.indices where records[index].state.isActive {
+            if (try? SimpleOneProtectedAccess.capture(ownerID: records[index].ownerID)) == nil {
+                records[index].state = .cancelled
+                records[index].isPresentationPending = false
+            }
         }
-        return try? Self.userDownloadsDirectory()
+        persistRecords()
+        session.getAllTasks { tasks in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                for task in tasks {
+                    guard let record = self.records.first(where: { $0.taskIdentifier == task.taskIdentifier }),
+                          self.isAuthorized(task.originalRequest, ownerID: record.ownerID) else {
+                        task.cancel(); continue
+                    }
+                }
+            }
+        }
+    }
+
+    private func isAuthorized(_ request: URLRequest?, ownerID: String) -> Bool {
+        guard let request, let access = try? SimpleOneProtectedAccess.capture(ownerID: ownerID) else { return false }
+        return request.value(forHTTPHeaderField: "X-SimpleOne-Auth") == access.authKey &&
+            request.value(forHTTPHeaderField: "Authorization") == "Bearer \(access.appToken)"
+    }
+
+    private func migrateManagedDownloads() {
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let destinationRoot = try? Self.userDownloadsDirectory() else { return }
+        let oldRoot = documents.appendingPathComponent("Загрузки FTP", isDirectory: true).resolvingSymlinksInPath()
+        for index in records.indices where records[index].action == .download {
+            guard let path = records[index].localFilePath else { continue }
+            let source = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            guard source.deletingLastPathComponent() == oldRoot, FileManager.default.fileExists(atPath: source.path) else { continue }
+            let destination = Self.availableDestination(in: destinationRoot, fileName: source.lastPathComponent)
+            do {
+                try FileManager.default.moveItem(at: source, to: destination)
+                records[index].localFilePath = destination.path
+            } catch { records[index].state = .failed; records[index].errorMessage = "Не удалось переместить файл в защищённое хранилище." }
+        }
+        persistRecords()
     }
 
     func reconnectBackgroundSession() {
@@ -315,6 +371,9 @@ final class FTPBackgroundDownloadManager: NSObject {
                     ) else {
                         task.cancel()
                         continue
+                    }
+                    guard self.isAuthorized(task.originalRequest, ownerID: self.records[index].ownerID), self.records[index].state != .cancelled else {
+                        task.cancel(); self.records[index].state = .cancelled; continue
                     }
                     let written = max(self.records[index].bytesWritten, task.countOfBytesReceived)
                     let expected = task.countOfBytesExpectedToReceive > 0
@@ -360,12 +419,17 @@ final class FTPBackgroundDownloadManager: NSObject {
         }
     }
 
-    private func finish(taskIdentifier: Int, recordID: String?, stagedURL: URL, response: URLResponse?) {
+    private func finish(taskIdentifier: Int, recordID: String?, stagedURL: URL, response: URLResponse?, request: URLRequest?) {
         guard let index = recordIndex(taskIdentifier: taskIdentifier, recordID: recordID) else {
             try? FileManager.default.removeItem(at: stagedURL.deletingLastPathComponent())
             return
         }
-        guard records[index].state != .cancelled else {
+        if isAuthorized(request, ownerID: records[index].ownerID),
+           let access = try? SimpleOneProtectedAccess.capture(ownerID: records[index].ownerID) {
+            // A rejected background request revokes caches and all other protected work too.
+            try? SimpleOneProtectedAccess.validate(access, response: response)
+        }
+        guard records[index].state != .cancelled, isAuthorized(request, ownerID: records[index].ownerID) else {
             try? FileManager.default.removeItem(at: stagedURL.deletingLastPathComponent())
             return
         }
@@ -385,8 +449,10 @@ final class FTPBackgroundDownloadManager: NSObject {
         persistRecords()
 
         pendingFinalizations += 1
+        let lease = SimpleOneAccessLease()
+        exportLeases[record.id] = lease
         let finalizationTask = Task.detached(priority: .utility) {
-            Self.finalizeDownloadedFile(stagedURL: stagedURL, record: record)
+            Self.finalizeDownloadedFile(stagedURL: stagedURL, record: record, lease: lease)
         }
         Task { @MainActor [weak self] in
             let result = await finalizationTask.value
@@ -396,11 +462,13 @@ final class FTPBackgroundDownloadManager: NSObject {
 
     private func applyFinalization(_ result: FTPFileFinalizationResult, recordID: UUID) {
         defer {
+            exportLeases.removeValue(forKey: recordID)
             pendingFinalizations = max(0, pendingFinalizations - 1)
             finishBackgroundEventsIfReady()
         }
         guard let index = records.firstIndex(where: { $0.id == recordID }),
-              records[index].state != .cancelled else {
+              records[index].state != .cancelled,
+              (try? SimpleOneProtectedAccess.capture(ownerID: records[index].ownerID)) != nil else {
             if let path = result.localFilePath {
                 Self.removeManagedLocalFileIfNeeded(URL(fileURLWithPath: path))
             }
@@ -511,10 +579,12 @@ final class FTPBackgroundDownloadManager: NSObject {
 
     nonisolated private static func finalizeDownloadedFile(
         stagedURL: URL,
-        record: FTPDownloadRecord
+        record: FTPDownloadRecord,
+        lease: SimpleOneAccessLease
     ) -> FTPFileFinalizationResult {
         var localURL: URL?
         do {
+            try lease.check()
             let namedURL = try moveToNamedLocalFile(stagedURL: stagedURL, fileName: record.fileName)
             localURL = namedURL
             let fileSize = (try? namedURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
@@ -526,7 +596,8 @@ final class FTPBackgroundDownloadManager: NSObject {
                 let destination = try copyToSelectedDirectory(
                     localURL: namedURL,
                     fileName: record.fileName,
-                    bookmark: bookmark
+                    bookmark: bookmark,
+                    lease: lease
                 )
                 try? FileManager.default.removeItem(at: namedURL.deletingLastPathComponent())
                 return FTPFileFinalizationResult(
@@ -539,7 +610,8 @@ final class FTPBackgroundDownloadManager: NSObject {
             if record.action == .download {
                 let destination = try copyToAppDownloadsDirectory(
                     localURL: namedURL,
-                    fileName: record.fileName
+                    fileName: record.fileName,
+                    lease: lease
                 )
                 try? FileManager.default.removeItem(at: namedURL.deletingLastPathComponent())
                 return FTPFileFinalizationResult(
@@ -549,6 +621,7 @@ final class FTPBackgroundDownloadManager: NSObject {
                 )
             }
 
+            try lease.check()
             return FTPFileFinalizationResult(
                 localFilePath: namedURL.path,
                 fileSize: fileSize,
@@ -580,7 +653,7 @@ final class FTPBackgroundDownloadManager: NSObject {
         try? FileManager.default.removeItem(at: parent)
     }
 
-    nonisolated private static func copyToSelectedDirectory(localURL: URL, fileName: String, bookmark: Data) throws -> URL {
+    nonisolated private static func copyToSelectedDirectory(localURL: URL, fileName: String, bookmark: Data, lease: SimpleOneAccessLease) throws -> URL {
         var isStale = false
         let directory = try URL(
             resolvingBookmarkData: bookmark,
@@ -598,26 +671,39 @@ final class FTPBackgroundDownloadManager: NSObject {
         }
 
         let destination = availableDestination(in: directory, fileName: fileName)
-        try FileManager.default.copyItem(at: localURL, to: destination)
+        try copyProtectedFile(from: localURL, to: destination, lease: lease)
         return destination
     }
 
-    nonisolated private static func copyToAppDownloadsDirectory(localURL: URL, fileName: String) throws -> URL {
+    nonisolated private static func copyToAppDownloadsDirectory(localURL: URL, fileName: String, lease: SimpleOneAccessLease) throws -> URL {
         let directory = try userDownloadsDirectory()
         let destination = availableDestination(in: directory, fileName: fileName)
-        try FileManager.default.copyItem(at: localURL, to: destination)
+        try copyProtectedFile(from: localURL, to: destination, lease: lease)
         return destination
+    }
+
+    nonisolated private static func copyProtectedFile(from source: URL, to destination: URL, lease: SimpleOneAccessLease) throws {
+        try lease.check()
+        guard FileManager.default.createFile(atPath: destination.path, contents: nil) else { throw SimpleOneAccessDenied() }
+        do {
+            let input = try FileHandle(forReadingFrom: source)
+            let output = try FileHandle(forWritingTo: destination)
+            defer { try? input.close(); try? output.close() }
+            while true {
+                try lease.check()
+                guard let data = try input.read(upToCount: 1024 * 1024), !data.isEmpty else { break }
+                try output.write(contentsOf: data)
+            }
+            try lease.check()
+        } catch { try? FileManager.default.removeItem(at: destination); throw error }
     }
 
     nonisolated private static func userDownloadsDirectory() throws -> URL {
-        let base = try FileManager.default.url(
-            for: .documentDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let directory = base.appendingPathComponent("Загрузки FTP", isDirectory: true)
+        let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        var directory = base.appendingPathComponent("FTPManagedDownloads", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var values = URLResourceValues(); values.isExcludedFromBackup = true
+        try? directory.setResourceValues(values)
         return directory
     }
 
@@ -716,7 +802,8 @@ extension FTPBackgroundDownloadManager: URLSessionDownloadDelegate {
                     taskIdentifier: downloadTask.taskIdentifier,
                     recordID: downloadTask.taskDescription,
                     stagedURL: stagedURL,
-                    response: downloadTask.response
+                    response: downloadTask.response,
+                    request: downloadTask.originalRequest
                 )
             case .failure(let error):
                 self.fail(

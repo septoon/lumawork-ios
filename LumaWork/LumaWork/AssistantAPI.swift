@@ -50,7 +50,7 @@ struct AssistantAPI {
         ))
 
         // Вопрос и изображение намеренно не передаются в общий NetworkDiagnostics.
-        let (data, response) = try await Self.session.data(for: request)
+        let (data, response) = try await SimpleOneProtectedAccess.data(for: request, session: Self.session, authToken: authToken)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AppServiceError.message("Сервер вернул неизвестный ответ.")
         }
@@ -101,7 +101,9 @@ struct AssistantAPI {
             toolResults: toolResults
         ))
 
+        let access = try SimpleOneProtectedAccess.authorize(&request, authToken: authToken)
         let (bytes, response) = try await Self.session.bytes(for: request)
+        try SimpleOneProtectedAccess.validate(access, response: response)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AppServiceError.message("Сервер вернул неизвестный ответ.")
         }
@@ -127,6 +129,7 @@ struct AssistantAPI {
         var eventName = ""
         var dataLines: [String] = []
         for try await line in bytes.lines {
+            try SimpleOneProtectedAccess.validate(access)
             if line.isEmpty {
                 if let result = try await Self.consumeStreamEvent(
                     name: eventName,
@@ -264,7 +267,7 @@ struct AssistantAPI {
             clientRequestID: clientRequestID.uuidString.lowercased(),
             conversationID: conversationID.uuidString.lowercased()
         ))
-        let (data, response) = try await Self.session.data(for: request)
+        let (data, response) = try await SimpleOneProtectedAccess.data(for: request, session: Self.session, authToken: authToken)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AppServiceError.message("Сервер вернул неизвестный ответ.")
         }
@@ -296,7 +299,7 @@ struct AssistantAPI {
         let url = try endpoint("api/v2/assistant/conversations/\(conversationID.uuidString)")
         var request = try authorizedRequest(url: url)
         request.httpMethod = "DELETE"
-        let (data, response) = try await Self.session.data(for: request)
+        let (data, response) = try await SimpleOneProtectedAccess.data(for: request, session: Self.session, authToken: authToken)
         try validate(response: response, data: data, expectedStatus: 204)
     }
 
@@ -306,7 +309,7 @@ struct AssistantAPI {
         request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(["title": title])
-        let (data, response) = try await Self.session.data(for: request)
+        let (data, response) = try await SimpleOneProtectedAccess.data(for: request, session: Self.session, authToken: authToken)
         try validate(response: response, data: data)
     }
 
@@ -329,7 +332,7 @@ struct AssistantAPI {
     private func get<Response: Decodable>(_ url: URL, as type: Response.Type) async throws -> Response {
         var request = try authorizedRequest(url: url)
         request.httpMethod = "GET"
-        let (data, response) = try await Self.session.data(for: request)
+        let (data, response) = try await SimpleOneProtectedAccess.data(for: request, session: Self.session, authToken: authToken)
         try validate(response: response, data: data)
         return try JSONDecoder().decode(type, from: data)
     }

@@ -120,7 +120,11 @@ struct ContentView: View {
         .onChange(of: sessionStore.authToken) { _, _ in
             isAdminUnlocked = false
         }
+        .onReceive(NotificationCenter.default.publisher(for: .simpleOneSessionChanged)) { _ in
+            stores.synchronizeProtectedAccess()
+        }
         .task {
+            stores.synchronizeProtectedAccess()
             normalizeSelectedSection()
         }
         .task(id: navigationRouter.pendingRoute) {
@@ -222,10 +226,9 @@ struct ContentView: View {
                 userEmail: sessionStore.currentEmail
             )
         case .wiki:
-            AssistantWorkspaceScreen(
-                wikiStore: stores.wikiStore,
-                assistantStore: stores.assistantStore
-            )
+            if stores.simpleOneStore.isAuthorized {
+                AssistantWorkspaceScreen(wikiStore: stores.wikiStore, assistantStore: stores.assistantStore)
+            } else { SimpleOneAuthorizationRequiredScreen(title: "Помощник") }
         case .ftp:
             if stores.simpleOneStore.isAuthorized {
                 FTPScreen(store: stores.ftpStore)
@@ -450,16 +453,13 @@ private struct SimpleOneAuthorizationRequiredScreen: View {
     var body: some View {
         AppScreen {
             AppEmptyState(
-                title: "SimpleOne не подключён",
+                title: "Доступ запрещен",
                 message: message,
                 systemName: "person.crop.circle.badge.exclamationmark"
             )
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            AppBannerCenter.shared.show(message, style: .information)
-        }
     }
 }
 

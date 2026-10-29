@@ -60,8 +60,13 @@ final class SimpleOneRequestsStore {
         }
     }
 
-    var isAuthorized: Bool {
-        authKey != nil
+    var isAuthorized: Bool { authKey != nil && authKey == SimpleOneSessionKeychain.readAuthKey() }
+
+    func reconcileStoredAuthorization() {
+        let stored = SimpleOneSessionKeychain.readAuthKey()
+        guard stored != authKey else { return }
+        authKey = stored
+        if stored == nil { refreshTask?.cancel(); notificationTask?.cancel() }
     }
 
     var browserAuthKey: String? {
@@ -77,6 +82,7 @@ final class SimpleOneRequestsStore {
     }
 
     func signIn(password: String) async {
+        guard !isSigningIn, var attempt = try? SimpleOneProtectedAccess.loginAttempt() else { return }
         let trimmedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPassword = password.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedUsername.isEmpty, !trimmedPassword.isEmpty else {
@@ -95,11 +101,14 @@ final class SimpleOneRequestsStore {
 
         do {
             let authKey = try await service.login(username: trimmedUsername, password: trimmedPassword)
+            try SimpleOneProtectedAccess.validateLoginAttempt(attempt)
             try SimpleOneSessionKeychain.saveAuthKey(authKey)
+            attempt = try SimpleOneProtectedAccess.loginAttempt()
             UserDefaults.standard.set(trimmedUsername, forKey: usernameStorageKey)
             self.authKey = authKey
             let previousUserID = currentUser?.sysID
             let fetchedUser = try await service.fetchCurrentUser(authKey: authKey)
+            try SimpleOneProtectedAccess.validateLoginAttempt(attempt)
             if let previousUserID, !previousUserID.isEmpty, previousUserID != fetchedUser.sysID {
                 activeRequests = []
                 activeRequestsRevision &+= 1
@@ -108,8 +117,10 @@ final class SimpleOneRequestsStore {
             }
             currentUser = fetchedUser
             try await refreshRequests(authKey: authKey)
+            try SimpleOneProtectedAccess.validateLoginAttempt(attempt)
             notice = "SimpleOne подключен."
         } catch {
+            guard (try? SimpleOneProtectedAccess.validateLoginAttempt(attempt)) != nil else { return }
             errorMessage = appUserFacingErrorMessage(error)
             if case .domain = AppErrorPresentation.classification(for: error) {
                 signOut(clearUsername: false)

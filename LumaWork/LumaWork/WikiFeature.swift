@@ -1,4 +1,5 @@
 import Foundation
+import QuickLook
 import Observation
 import SwiftUI
 
@@ -56,9 +57,9 @@ struct WikiAPI {
     private let token: String?
     private let session: URLSession
 
-    init(config: AppConfig, session: URLSession = .shared) {
-        self.origin = AppConfig.configuredURL(config.wikiAPIOrigin)
-        self.token = Self.nonEmpty(config.wikiAPIToken?.trimmingCharacters(in: .whitespacesAndNewlines))
+    init(config: AppConfig, authToken: String? = nil, session: URLSession = .shared) {
+        self.origin = AppConfig.configuredURL(config.lumaWorkAPIOrigin).appendingPathComponent("api/v2/wiki")
+        self.token = authToken ?? LumaWorkSessionKeychain.readSession()?.token
         self.session = session
     }
 
@@ -68,7 +69,7 @@ struct WikiAPI {
 
     func search(query: String, limit: Int = 10) async throws -> WikiSearchPage {
         guard token != nil else {
-            throw AppServiceError.message("Не задан WIKI_API_TOKEN.")
+            throw SimpleOneAccessDenied()
         }
 
         var components = URLComponents(url: origin.appendingPathComponent("search"), resolvingAgainstBaseURL: false)
@@ -87,7 +88,7 @@ struct WikiAPI {
 
     func article(id: String, maxChars: Int = 90000) async throws -> WikiArticle {
         guard token != nil else {
-            throw AppServiceError.message("Не задан WIKI_API_TOKEN.")
+            throw SimpleOneAccessDenied()
         }
 
         var components = URLComponents(
@@ -105,12 +106,25 @@ struct WikiAPI {
         return try await request(url)
     }
 
-    func pdfURL(for id: String) -> URL {
-        let url = origin.appendingPathComponent("pdf").appendingPathComponent(id)
-        guard let token else { return url }
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "token", value: token)]
-        return components?.url ?? url
+    func pdfURL(for id: String) -> URL { origin.appendingPathComponent("pdf").appendingPathComponent(id) }
+
+    func requireAccess() throws -> SimpleOneAccessSnapshot { try SimpleOneProtectedAccess.capture(authToken: token) }
+    var hasAccess: Bool { (try? requireAccess()) != nil }
+
+    func localPDF(for id: String) async throws -> URL {
+        let access = try requireAccess()
+        var request = URLRequest(url: pdfURL(for: id))
+        request.setValue("application/pdf", forHTTPHeaderField: "Accept")
+        let (data, response) = try await SimpleOneProtectedAccess.data(for: request, session: session, authToken: token)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 20_000_000 else {
+            throw AppServiceError.message("Не удалось загрузить PDF.")
+        }
+        try SimpleOneProtectedAccess.validate(access)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wiki-pdfs", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("pdf")
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
+        return url
     }
 
     func isPDFAvailable(id: String) async -> Bool {
@@ -123,7 +137,7 @@ struct WikiAPI {
         }
 
         do {
-            let (_, response) = try await session.data(for: request)
+            let (_, response) = try await SimpleOneProtectedAccess.data(for: request, session: session, authToken: token)
             guard let httpResponse = response as? HTTPURLResponse else { return false }
             return (200 ..< 300).contains(httpResponse.statusCode)
         } catch {
@@ -146,7 +160,7 @@ struct WikiAPI {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await SimpleOneProtectedAccess.data(for: request, session: session, authToken: token)
         } catch {
             switch AppErrorPresentation.classification(for: error) {
             case .cancellation:
@@ -201,6 +215,11 @@ final class WikiStore {
     init(service: WikiAPI, cacheID: String? = nil) {
         self.service = service
         cacheKey = AppOfflineSnapshotStore.scopedKey("wiki-search", userID: cacheID)
+        restoreProtectedCache()
+    }
+
+    func restoreProtectedCache() {
+        guard service.hasAccess else { return }
         if let snapshot = AppOfflineSnapshotStore.load(
             WikiSearchSnapshot.self,
             key: cacheKey
@@ -209,6 +228,10 @@ final class WikiStore {
             snapshotID = snapshot.value.snapshotID
             results = snapshot.value.results
         }
+    }
+
+    func clearProtectedState() {
+        results = []; snapshotID = nil; articleCount = nil; errorMessage = nil; isSearching = false
     }
 
     var searchTaskID: String {
@@ -239,6 +262,7 @@ final class WikiStore {
     }
 
     func refreshContentVersion() async {
+        guard service.hasAccess else { clearProtectedState(); return }
         guard let health = try? await service.health(), !Task.isCancelled else { return }
         articleCount = health.articles
         let currentVersion = health.snapshotId ?? health.contentVersion
@@ -264,6 +288,7 @@ final class WikiStore {
     }
 
     func searchIfNeeded() async {
+        guard service.hasAccess else { clearProtectedState(); errorMessage = "Доступ запрещен"; return }
         let normalizedQuery = searchTaskID
         guard !normalizedQuery.isEmpty else {
             results = []
@@ -475,6 +500,7 @@ private struct WikiArticleScreen: View {
     @State private var document: WikiArticleDocument?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var localPDFURL: URL?
     @State private var isPDFAvailable = false
     @State private var didCheckPDF = false
 
@@ -511,7 +537,7 @@ private struct WikiArticleScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     if isPDFAvailable {
-                        Link(destination: service.pdfURL(for: result.id)) {
+                        Button { Task { await openPDF() } } label: {
                             Label("Открыть PDF", systemImage: "doc.richtext")
                         }
                     }
@@ -532,6 +558,14 @@ private struct WikiArticleScreen: View {
                 }
             }
         }
+        .quickLookPreview($localPDFURL)
+        .onChange(of: localPDFURL) { oldURL, newURL in
+            if let oldURL, oldURL != newURL { try? FileManager.default.removeItem(at: oldURL) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .simpleOneSessionChanged)) { _ in
+            if !service.hasAccess { localPDFURL = nil; article = nil; document = nil }
+        }
+        .onDisappear { localPDFURL = nil }
         .task(id: result.id) {
             await loadArticle()
             await checkPDF()
@@ -600,7 +634,7 @@ private struct WikiArticleScreen: View {
 
                 HStack(spacing: 10) {
                     if isPDFAvailable {
-                        Link(destination: service.pdfURL(for: result.id)) {
+                        Button { Task { await openPDF() } } label: {
                             Label("PDF", systemImage: "doc.richtext")
                         }
                         .buttonStyle(AppActionButtonStyle())
@@ -631,13 +665,19 @@ private struct WikiArticleScreen: View {
         }
     }
 
+    private func openPDF() async {
+        do { localPDFURL = try await service.localPDF(for: result.id) }
+        catch { errorMessage = appUserFacingErrorMessage(error) }
+    }
+
     private func loadArticle() async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
 
+        guard let access = try? service.requireAccess() else { article = nil; document = nil; errorMessage = "Доступ запрещен"; return }
         let version = snapshotID ?? "legacy"
-        let cacheKey = "wiki-article-\(version)-\(result.id)"
+        let cacheKey = AppOfflineSnapshotStore.scopedKey("wiki-article-\(version)-\(result.id)", userID: access.ownerID)
         if let snapshot = AppOfflineSnapshotStore.load(WikiArticle.self, key: cacheKey) {
             article = snapshot.value
             document = WikiArticleDocument(article: snapshot.value)
@@ -645,12 +685,13 @@ private struct WikiArticleScreen: View {
 
         do {
             let loadedArticle = try await service.article(id: result.id)
+            try SimpleOneProtectedAccess.validate(access)
             article = loadedArticle
             document = WikiArticleDocument(article: loadedArticle)
             let loadedVersion = loadedArticle.snapshotId ?? version
             AppOfflineSnapshotStore.save(
                 loadedArticle,
-                key: "wiki-article-\(loadedVersion)-\(result.id)"
+                key: AppOfflineSnapshotStore.scopedKey("wiki-article-\(loadedVersion)-\(result.id)", userID: access.ownerID)
             )
         } catch is CancellationError {
             return

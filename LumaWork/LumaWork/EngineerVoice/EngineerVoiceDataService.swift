@@ -365,6 +365,7 @@ final class EngineerVoiceDataService {
             result = "Активных заявок группы в городе \(region.title): \(records.count). Просрочено: \(records.filter(\.isOverdue).count)."
 
         case .ftpFiles:
+            _ = try SimpleOneProtectedAccess.capture(ownerID: session.user.id)
             let directory = try await FTPAPI(config: config, authToken: session.token).files(path: "/")
             result = "В корне FTP: \(directory.items.filter(\.isDirectory).count) папок, \(directory.items.filter { !$0.isDirectory }.count) файлов. "
                 + directory.items.prefix(8).map(\.name).joined(separator: ". ")

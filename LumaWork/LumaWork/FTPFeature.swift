@@ -42,7 +42,7 @@ struct FTPAPI {
         let request = try authorizedRequest(path: "/api/v2/ftp/files", query: [
             URLQueryItem(name: "path", value: path)
         ])
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await SimpleOneProtectedAccess.data(for: request, session: session, authToken: authToken)
         try validate(response: response, data: data)
         return try JSONDecoder().decode(FTPDirectoryResponse.self, from: data)
     }
@@ -89,6 +89,7 @@ struct FTPAPI {
                 request.setValue(value, forHTTPHeaderField: field)
             }
         }
+        try SimpleOneProtectedAccess.authorize(&request, authToken: authToken)
         return request
     }
 
@@ -130,6 +131,11 @@ final class FTPStore {
         ownerID = cacheID ?? "anonymous"
         cacheKey = AppOfflineSnapshotStore.scopedKey("ftp-directories", userID: cacheID)
         favoritesKey = AppOfflineSnapshotStore.scopedKey("ftp-favorites", userID: cacheID)
+        restoreProtectedCache()
+    }
+
+    func restoreProtectedCache() {
+        guard (try? SimpleOneProtectedAccess.capture(ownerID: ownerID)) != nil else { return }
         if let snapshot = AppOfflineSnapshotStore.load(
             [String: [FTPItem]].self,
             key: cacheKey
@@ -139,12 +145,17 @@ final class FTPStore {
         favoritePaths = AppOfflineSnapshotStore.load([String].self, key: favoritesKey)?.value ?? []
     }
 
+    func clearProtectedState() {
+        itemsByPath = [:]; favoritePaths = []; errorsByPath = [:]; downloadError = nil
+    }
+    private var hasAccess: Bool { (try? SimpleOneProtectedAccess.capture(ownerID: ownerID)) != nil }
+
     func isFavorite(_ path: String) -> Bool {
-        favoritePaths.contains(path)
+        hasAccess && favoritePaths.contains(path)
     }
 
     func toggleFavorite(_ path: String) {
-        guard path != "/" else { return }
+        guard hasAccess, path != "/" else { return }
         if let index = favoritePaths.firstIndex(of: path) {
             favoritePaths.remove(at: index)
         } else {
@@ -155,10 +166,11 @@ final class FTPStore {
     }
 
     func items(at path: String) -> [FTPItem] {
-        itemsByPath[path] ?? []
+        hasAccess ? itemsByPath[path] ?? [] : []
     }
 
     func load(path: String, force: Bool = false) async {
+        guard hasAccess else { clearProtectedState(); errorsByPath[path] = "Доступ запрещен"; return }
         guard force || itemsByPath[path] == nil else { return }
         guard !loadingPaths.contains(path) else { return }
         loadingPaths.insert(path)
@@ -167,7 +179,7 @@ final class FTPStore {
 
         do {
             let response = try await service.files(path: path)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, hasAccess else { return }
             itemsByPath[path] = response.items
             AppOfflineSnapshotStore.save(itemsByPath, key: cacheKey)
         } catch is CancellationError {

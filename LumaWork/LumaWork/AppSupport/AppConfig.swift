@@ -2,7 +2,6 @@ import Foundation
 
 nonisolated struct AppConfig {
     let wikiAPIOrigin: String?
-    let wikiAPIToken: String?
     let lumaWorkAPIOrigin: String?
     let simpleOneAPIOrigin: String?
     let simpleOneWebOrigin: String?
@@ -15,7 +14,6 @@ nonisolated struct AppConfig {
 
     init(
         wikiAPIOrigin: String? = AppConfig.resolveWikiAPIOrigin(),
-        wikiAPIToken: String? = AppConfig.resolveWikiAPIToken(),
         lumaWorkAPIOrigin: String? = AppConfig.resolveLumaWorkAPIOrigin(),
         simpleOneAPIOrigin: String? = AppConfig.resolveFirst("SIMPLEONE_API_URL", "SIMPLEONE_API_ORIGIN"),
         simpleOneWebOrigin: String? = AppConfig.resolveFirst("SIMPLEONE_WEB_URL", "SIMPLEONE_WEB_ORIGIN"),
@@ -27,7 +25,6 @@ nonisolated struct AppConfig {
         mapsRouteURL: String? = AppConfig.resolveFirst("MAPS_ROUTE_URL")
     ) {
         self.wikiAPIOrigin = wikiAPIOrigin
-        self.wikiAPIToken = wikiAPIToken
         self.lumaWorkAPIOrigin = lumaWorkAPIOrigin
         self.simpleOneAPIOrigin = simpleOneAPIOrigin
         self.simpleOneWebOrigin = simpleOneWebOrigin
@@ -41,10 +38,6 @@ nonisolated struct AppConfig {
 
     private static func resolveWikiAPIOrigin() -> String? {
         resolveFirst("WIKI_API_URL", "WIKI_API_ORIGIN")
-    }
-
-    private static func resolveWikiAPIToken() -> String? {
-        resolveFirst("WIKI_API_TOKEN")
     }
 
     private static func resolveLumaWorkAPIOrigin() -> String? {
