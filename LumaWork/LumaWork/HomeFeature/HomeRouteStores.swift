@@ -39,6 +39,8 @@ struct RouteMonthlyMileage: Hashable {
     private(set) var isDeletingArchivedDay = false
     private var isProcessingQueue = false
     private var archiveMutationRevision = 0
+    private var endpointEditRevision = 0
+    private var hasAutomaticStart = false
     private(set) var areArchiveExclusionsReady = false
     var isSending = false
     var isLoadingRemote = false
@@ -60,6 +62,7 @@ struct RouteMonthlyMileage: Hashable {
         let todayKey = RouteDateFormatter.dayKey(from: Date())
         self.areArchiveExclusionsReady = storage.hasExcludedDatesSnapshot
         self.routeSettings = storage.loadSettings()
+        self.hasAutomaticStart = storage.loadAllDays()[RouteWorkType.pos.storageKey(for: todayKey)] == nil
         self.record = storage.loadDay(todayKey, workType: .pos)
         self.dailyMileageByDate = storage.loadDailyMileageByDate()
         refreshAddressOptions()
@@ -266,6 +269,8 @@ struct RouteMonthlyMileage: Hashable {
 
         let dateKey = selectedDateKey
         let selectedWorkType = workType
+        let retainsAutomaticStart = record.date == dateKey && record.workType == selectedWorkType && hasAutomaticStart
+        hasAutomaticStart = retainsAutomaticStart || storage.loadAllDays()[selectedWorkType.storageKey(for: dateKey)] == nil
         record = storage.loadDay(dateKey, workType: selectedWorkType)
         refreshAddressOptions()
 
@@ -276,6 +281,7 @@ struct RouteMonthlyMileage: Hashable {
 
         isLoadingRemote = true
         let requestedRecord = record
+        let requestedEndpointRevision = endpointEditRevision
         let settings = routeSettings
 
         Task {
@@ -287,11 +293,12 @@ struct RouteMonthlyMileage: Hashable {
                 )
                 await MainActor.run {
                     guard self.selectedDateKey == dateKey, self.workType == selectedWorkType else { return }
-                    guard self.record == requestedRecord else {
+                    guard self.record == requestedRecord, self.endpointEditRevision == requestedEndpointRevision else {
                         self.isLoadingRemote = false
                         return
                     }
                     if let remote {
+                        self.hasAutomaticStart = false
                         self.record = remote
                         self.storage.saveDay(remote)
                         if let distanceKm = remote.distanceKm {
@@ -450,6 +457,9 @@ struct RouteMonthlyMileage: Hashable {
             return
         }
 
+        endpointEditRevision += 1
+        hasAutomaticStart = false
+        record.hasManualEndpointSelection = true
         if record.stops[index].address.normalizedRouteEndpointAddress() != address.normalizedRouteEndpointAddress() {
             record.stops[index].address = address
             invalidateCalculatedDistance()
@@ -835,6 +845,7 @@ struct RouteMonthlyMileage: Hashable {
     }
 
     private func shouldFetchRemote(for record: RouteDayRecord, dateKey: String) -> Bool {
+        if record.hasManualEndpointSelection, !record.sent { return false }
         if dateKey == RouteDateFormatter.dayKey(from: Date()), !record.sent {
             return false
         }
@@ -941,12 +952,27 @@ struct RouteMonthlyMileage: Hashable {
 
     private func refreshMileageHistory() async {
         let revision = archiveMutationRevision
+        let requestedRecord = record
+        let requestedEndpointRevision = endpointEditRevision
         var mileageByDate = storage.loadDailyMileageByDate()
         var remoteKeys = Set<String>()
 
         do {
             let remoteRecords = try await service.fetchAllDays(settings: routeSettings)
             guard archiveMutationRevision == revision else { return }
+            if hasAutomaticStart, record == requestedRecord, endpointEditRevision == requestedEndpointRevision {
+                let inherited = storage.newDay(for: record.date, workType: record.workType, history: remoteRecords)
+                if record.stops.first?.address != inherited.stops.first?.address, !record.stops.isEmpty {
+                    record.stops[0].address = inherited.stops[0].address
+                    invalidateCalculatedDistance()
+                    persistCurrentRecord()
+                }
+            }
+            let localDays = storage.loadAllDays()
+            for day in remoteRecords where day.date < record.date && !storage.isExcluded(day.date) &&
+                localDays[day.workType.storageKey(for: day.date)] == nil {
+                storage.saveDay(day)
+            }
             for record in remoteRecords {
                 remoteKeys.insert(record.workType.storageKey(for: record.date))
                 if let distanceKm = record.distanceKm {

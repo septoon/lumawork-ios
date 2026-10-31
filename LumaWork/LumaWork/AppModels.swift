@@ -207,6 +207,7 @@ struct RouteDayRecord: Codable, Hashable {
     var fuelLiters: Double? = nil
     var fuelCostRub: Double? = nil
     var sent: Bool
+    var hasManualEndpointSelection: Bool = false
 
     init(
         date: String,
@@ -252,6 +253,7 @@ struct RouteDayRecord: Codable, Hashable {
         case fuelLiters
         case fuelCostRub
         case sent
+        case hasManualEndpointSelection
     }
 
     init(from decoder: Decoder) throws {
@@ -269,6 +271,7 @@ struct RouteDayRecord: Codable, Hashable {
         fuelLiters = try container.decodeIfPresent(Double.self, forKey: .fuelLiters)
         fuelCostRub = try container.decodeIfPresent(Double.self, forKey: .fuelCostRub)
         sent = try container.decodeIfPresent(Bool.self, forKey: .sent) ?? false
+        hasManualEndpointSelection = try container.decodeIfPresent(Bool.self, forKey: .hasManualEndpointSelection) ?? false
     }
 }
 

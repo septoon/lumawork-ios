@@ -147,6 +147,7 @@ struct EvotorDriversCard: View {
     @Environment(EvotorDriverLinksStore.self) private var store
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var browserDestination: SimpleOneBrowserDestination?
+    @State private var qrDestination: EvotorDriverQrDestination?
 
     var body: some View {
         AppCard {
@@ -154,13 +155,19 @@ struct EvotorDriversCard: View {
             GlassEffectContainer(spacing: 12) {
                 if dynamicTypeSize.isAccessibilitySize {
                     VStack(spacing: 12) {
-                        driverButton(.aisino)
-                        driverButton(.pax)
+                        driverCard(.aisino)
+                        driverCard(.pax)
                     }
                 } else {
-                    HStack(spacing: 12) {
-                        driverButton(.aisino)
-                        driverButton(.pax)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 12) {
+                            driverCard(.aisino).frame(minWidth: 140)
+                            driverCard(.pax).frame(minWidth: 140)
+                        }
+                        VStack(spacing: 12) {
+                            driverCard(.aisino)
+                            driverCard(.pax)
+                        }
                     }
                 }
             }
@@ -172,40 +179,117 @@ struct EvotorDriversCard: View {
         }
         .task { await store.refresh() }
         .background(EvotorDriverSafariPresenter(destination: $browserDestination).frame(width: 0, height: 0))
+        .sheet(item: $qrDestination) { destination in
+            EvotorDriverQrSheet(destination: destination)
+        }
     }
 
-    private func driverButton(_ driver: EvotorDriver) -> some View {
-        Button {
-            guard let url = store.links.url(for: driver) else { return }
-            AppHaptics.trigger()
-            browserDestination = SimpleOneBrowserDestination(url: url, authKey: nil, title: driver.title)
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: "square.and.arrow.down")
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(AppTheme.primaryTint)
-                    Spacer(minLength: 0)
-                    Image(systemName: "arrow.up.right")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(AppTheme.mutedTint)
+    private func driverCard(_ driver: EvotorDriver) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(driver.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                driverAction("Открыть", icon: "arrow.up.right.square", driver: driver, tint: AppTheme.primaryTint) {
+                    guard let url = store.links.url(for: driver) else { return }
+                    browserDestination = SimpleOneBrowserDestination(url: url, authKey: nil, title: driver.title)
                 }
-                Text(driver.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppTheme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                driverAction("QR-код", icon: "qrcode", driver: driver, tint: AppTheme.mutedTint) {
+                    guard let url = store.links.url(for: driver) else { return }
+                    qrDestination = EvotorDriverQrDestination(driver: driver, url: url)
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.cardSurface, in: RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(AppTheme.border, lineWidth: 1))
+    }
+
+    private func driverAction(_ title: String, icon: String, driver: EvotorDriver, tint: Color,
+                              action: @escaping () -> Void) -> some View {
+        Button {
+            AppHaptics.trigger()
+            action()
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title2)
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 52)
             .contentShape(Rectangle())
         }
         .buttonStyle(.glass)
-        .buttonBorderShape(.roundedRectangle(radius: 16))
+        .buttonBorderShape(.roundedRectangle(radius: 14))
+        .tint(tint)
         .disabled(store.links.url(for: driver) == nil)
-        .accessibilityLabel(driver.title)
-        .accessibilityHint("Открывает страницу драйвера в полноэкранном браузере")
+        .accessibilityLabel("\(title): \(driver.title)")
+    }
+}
+
+private struct EvotorDriverQrDestination: Identifiable {
+    let driver: EvotorDriver
+    let url: URL
+    var id: String { driver.id }
+}
+
+private struct EvotorDriverQrSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let destination: EvotorDriverQrDestination
+    private let qrImage: UIImage?
+
+    init(destination: EvotorDriverQrDestination) {
+        self.destination = destination
+        qrImage = QRCodeBuilder.image(for: destination.url.absoluteString)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    Text("Отсканируйте QR-код, чтобы открыть ссылку на драйвер")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.mutedTint)
+                    if let qrImage {
+                        Image(uiImage: qrImage)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .padding(24)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                            .frame(maxWidth: 320)
+                            .accessibilityLabel("QR-код: \(destination.driver.title)")
+                    } else {
+                        ContentUnavailableView("Не удалось создать QR-код", systemImage: "qrcode")
+                    }
+                    Text(destination.url.absoluteString)
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.ink)
+                        .textSelection(.enabled)
+                }
+                .multilineTextAlignment(.center)
+                .padding(20)
+                .frame(maxWidth: .infinity)
+            }
+            .background(AppTheme.background)
+            .navigationTitle(destination.driver.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    ModalCloseButton { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.height(560), .large])
+        .presentationDragIndicator(.visible)
     }
 }
 

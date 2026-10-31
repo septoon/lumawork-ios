@@ -62,7 +62,7 @@ final class RouteLocalStorage {
         var all = loadAllDays()
         let storageKey = workType.storageKey(for: date)
         let migrated = Self.migrateLegacyOfficeAddress(
-            in: all[storageKey] ?? Self.defaultDay(for: date, workType: workType, settings: settings),
+            in: all[storageKey] ?? newDay(for: date, workType: workType),
             settings: settings
         )
         let monthKey = Self.monthKey(for: date)
@@ -81,6 +81,28 @@ final class RouteLocalStorage {
         all[storageKey] = normalized
         saveAllDays(all)
         return normalized
+    }
+
+    func newDay(for date: String, workType: RouteWorkType = .pos, history: [RouteDayRecord] = []) -> RouteDayRecord {
+        let settings = loadSettings()
+        let days = loadAllDays().merging(Dictionary(history.map { ($0.workType.storageKey(for: $0.date), $0) },
+            uniquingKeysWith: { _, newer in newer }), uniquingKeysWith: { local, remote in Self.isWorkingDay(local) ? local : remote })
+        let previous = days.values.filter { day in
+            day.date < date && !isExcluded(day.date) && Self.isWorkingDay(day)
+        }.max { lhs, rhs in
+            lhs.date == rhs.date ? lhs.workType != workType && rhs.workType == workType : lhs.date < rhs.date
+        }
+        let home = settings.homeAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finish = previous?.stops.last?.address.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let start: RouteEndpointKind = !home.isEmpty && finish.compare(home, options: .caseInsensitive) == .orderedSame ? .home : .warehouse
+        return Self.defaultDay(for: date, workType: workType, settings: settings, startKind: start)
+    }
+
+    private static func isWorkingDay(_ day: RouteDayRecord) -> Bool {
+        day.sent || day.distanceKm != nil || day.stops.dropFirst().dropLast().contains {
+            !$0.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !$0.requestNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     func saveDay(_ record: RouteDayRecord, immediately: Bool = false) {
@@ -361,7 +383,8 @@ final class RouteLocalStorage {
     static func defaultDay(
         for date: String,
         workType: RouteWorkType = .pos,
-        settings: RouteSettings
+        settings: RouteSettings,
+        startKind: RouteEndpointKind = .warehouse
     ) -> RouteDayRecord {
         RouteDayRecord(
             date: date,
@@ -369,7 +392,7 @@ final class RouteLocalStorage {
             stops: [
                 makeStop(
                     id: "start-\(date)",
-                    address: settings.startAddress,
+                    address: settings.address(for: startKind),
                     reason: "Подготовка оборудования",
                     status: .done
                 ),
@@ -441,7 +464,7 @@ final class RouteLocalStorage {
         periodStartOdometer: Int?
     ) -> RouteDayRecord {
         let base = defaultDay(for: date, workType: workType, settings: settings)
-        return RouteDayRecord(
+        var normalized = RouteDayRecord(
             date: date,
             workType: workType,
             stops: hydrateStops(raw: record.stops, base: base.stops),
@@ -456,6 +479,8 @@ final class RouteLocalStorage {
             fuelCostRub: record.fuelCostRub,
             sent: record.sent
         )
+        normalized.hasManualEndpointSelection = record.hasManualEndpointSelection
+        return normalized
     }
 
     static func migrateLegacyOfficeAddress(in settings: RouteSettings) -> RouteSettings {
