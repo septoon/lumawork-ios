@@ -132,9 +132,11 @@ struct RouteDayService {
         return dates
     }
 
-    func deleteDay(date: String) async throws {
+    func deleteDay(date: String, workType: RouteWorkType? = nil) async throws {
         guard let authToken, let base = v2RoutesURL() else { throw RouteDayServiceError.unauthorized }
-        _ = try await requestJSON(base.appendingPathComponent(date), method: "DELETE", authToken: authToken)
+        var url = base.appendingPathComponent(date)
+        if let workType { url = url.appendingPathComponent("work-types").appendingPathComponent(workType.rawValue) }
+        _ = try await requestJSON(url, method: "DELETE", authToken: authToken)
     }
 
     func fetchAllDays(settings: RouteSettings) async throws -> [RouteDayRecord] {
@@ -176,7 +178,7 @@ struct RouteDayService {
             "workType": record.workType.rawValue,
             "distanceKm": record.distanceKm as Any,
             "periodStartOdometer": record.periodStartOdometer as Any,
-            "sent": record.sent,
+            "sent": true,
             "stops": record.stops.map { stop in
                 [
                     "id": stop.id,

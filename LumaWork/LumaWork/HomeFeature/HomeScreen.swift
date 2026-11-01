@@ -902,8 +902,7 @@ struct HomeScreen: View {
     }
 
     private func canRemoveStop(at index: Int) -> Bool {
-        guard index != 0, index != routeStore.record.stops.count - 1 else { return false }
-        return routeStore.record.stops.count > 3
+        return index > 0 && index < routeStore.record.stops.count - 1
     }
 
 }

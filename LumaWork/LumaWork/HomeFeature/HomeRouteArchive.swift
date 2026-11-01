@@ -13,6 +13,7 @@ struct RouteArchiveScreen: View {
     @State private var monthPickerPresentation: RouteArchiveMonthPickerPresentation?
     @State private var isOdometerPresented = false
     @State private var dayPendingDeletion: String?
+    @State private var routePendingDeletion: RouteDayRecord?
     @State private var isDeleting = false
 
     init(
@@ -49,6 +50,20 @@ struct RouteArchiveScreen: View {
             if !selectedRecords.isEmpty {
                 ForEach(selectedRecords, id: \.workType) { record in
                     RouteArchiveDayDetail(record: record)
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                AppHaptics.trigger()
+                                routePendingDeletion = record
+                            } label: {
+                                Label("Удалить \(record.workType.title)", systemImage: "trash")
+                            }
+                            .disabled(store.isLoading || routeStore.isSending || routeStore.isDeletingArchivedDay)
+                        }
+                        .accessibilityAction(named: Text("Удалить \(record.workType.title)")) {
+                            guard !store.isLoading, !isDeleting else { return }
+                            routePendingDeletion = record
+                        }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             } else if displayedMonthRecords.isEmpty {
@@ -86,6 +101,26 @@ struct RouteArchiveScreen: View {
             Button("Отмена", role: .cancel) { }
         } message: {
             Text("День \(dayPendingDeletion ?? "") будет удалён из архива и исключён из последующих ГСМ-отчётов. Его можно будет добавить заново. Уже отправленные отчёты не изменятся.")
+        }
+        .alert("Удалить \(routePendingDeletion?.workType.title ?? "маршрут") из архива?", isPresented: Binding(
+            get: { routePendingDeletion != nil }, set: { if !$0 { routePendingDeletion = nil } }
+        )) {
+            Button("Удалить", role: .destructive) {
+                guard let record = routePendingDeletion else { return }
+                isDeleting = true
+                Task {
+                    defer { isDeleting = false; routePendingDeletion = nil }
+                    do {
+                        try await routeStore.deleteArchivedDay(record.date, workType: record.workType)
+                        store.removeDeletedDay(record.date, workType: record.workType)
+                    } catch {
+                        store.errorMessage = appUserFacingErrorMessage(error, fallback: "Не удалось удалить маршрут из архива.")
+                    }
+                }
+            }
+            Button("Отмена", role: .cancel) { routePendingDeletion = nil }
+        } message: {
+            Text("Будет удалён только маршрут \(routePendingDeletion?.workType.title ?? "") за \(routePendingDeletion?.date ?? ""). Второй тип маршрута за этот день сохранится. Уже отправленные ГСМ-отчёты не изменятся.")
         }
         .navigationTitle("Все маршруты")
         .navigationBarTitleDisplayMode(.inline)

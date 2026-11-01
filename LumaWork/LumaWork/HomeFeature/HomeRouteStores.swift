@@ -62,7 +62,8 @@ struct RouteMonthlyMileage: Hashable {
         let todayKey = RouteDateFormatter.dayKey(from: Date())
         self.areArchiveExclusionsReady = storage.hasExcludedDatesSnapshot
         self.routeSettings = storage.loadSettings()
-        self.hasAutomaticStart = storage.loadAllDays()[RouteWorkType.pos.storageKey(for: todayKey)] == nil
+        let initial = storage.loadAllDays()[RouteWorkType.pos.storageKey(for: todayKey)]
+        self.hasAutomaticStart = initial?.sent != true && initial?.hasManualEndpointSelection != true
         self.record = storage.loadDay(todayKey, workType: .pos)
         self.dailyMileageByDate = storage.loadDailyMileageByDate()
         refreshAddressOptions()
@@ -239,8 +240,9 @@ struct RouteMonthlyMileage: Hashable {
     private func syncArchiveExclusions() async {
         do {
             let dates = try await service.fetchExcludedDates()
-            let shouldClearCurrent = dates.contains(record.date) && !storage.isPendingRestore(record.date)
-                && (record.sent || storage.loadQueue().contains { $0.date == record.date })
+            let shouldClearCurrent = (dates.contains(record.date) || dates.contains(record.workType.exclusionKey(for: record.date)))
+                && !storage.isPendingRestore(record.date, workType: record.workType)
+                && (record.sent || storage.loadQueue().contains { $0.date == record.date && $0.workType == record.workType })
             storage.syncExcludedDates(dates)
             if shouldClearCurrent {
                 record = RouteLocalStorage.defaultDay(for: record.date, workType: record.workType, settings: routeSettings)
@@ -270,7 +272,8 @@ struct RouteMonthlyMileage: Hashable {
         let dateKey = selectedDateKey
         let selectedWorkType = workType
         let retainsAutomaticStart = record.date == dateKey && record.workType == selectedWorkType && hasAutomaticStart
-        hasAutomaticStart = retainsAutomaticStart || storage.loadAllDays()[selectedWorkType.storageKey(for: dateKey)] == nil
+        let cached = storage.loadAllDays()[selectedWorkType.storageKey(for: dateKey)]
+        hasAutomaticStart = retainsAutomaticStart || (cached?.sent != true && cached?.hasManualEndpointSelection != true)
         record = storage.loadDay(dateKey, workType: selectedWorkType)
         refreshAddressOptions()
 
@@ -297,7 +300,8 @@ struct RouteMonthlyMileage: Hashable {
                         self.isLoadingRemote = false
                         return
                     }
-                    if let remote {
+                    if var remote {
+                        remote.sent = true
                         self.hasAutomaticStart = false
                         self.record = remote
                         self.storage.saveDay(remote)
@@ -337,7 +341,6 @@ struct RouteMonthlyMileage: Hashable {
     }
 
     func removeStop(_ id: String) {
-        guard record.stops.count > 3 else { return }
         guard let index = record.stops.firstIndex(where: { $0.id == id }),
               index != 0,
               index != record.stops.count - 1 else {
@@ -671,7 +674,7 @@ struct RouteMonthlyMileage: Hashable {
     }
 
     func autoImportClosedRequestsIfEmpty(_ requests: [ClosedRequestRecord]) -> Bool {
-        guard workType == .pos, areArchiveExclusionsReady, !storage.isExcluded(selectedDateKey) else { return false }
+        guard workType == .pos, areArchiveExclusionsReady, !storage.isExcluded(selectedDateKey, workType: workType) else { return false }
         guard !hasCurrentRouteData, !requests.isEmpty else { return false }
         guard let firstStop = record.stops.first, let lastStop = record.stops.last else { return false }
 
@@ -799,7 +802,7 @@ struct RouteMonthlyMileage: Hashable {
             dailyMileageByDate[currentRecord.workType.storageKey(for: dateKey)] = distanceKm
         }
 
-        storage.beginExplicitRestore(dateKey)
+        storage.beginExplicitRestore(dateKey, workType: currentRecord.workType)
         isSending = true
         defer { isSending = false }
 
@@ -827,17 +830,19 @@ struct RouteMonthlyMileage: Hashable {
         }
     }
 
-    func deleteArchivedDay(_ date: String) async throws {
+    func deleteArchivedDay(_ date: String, workType deletedType: RouteWorkType? = nil) async throws {
         guard !isSending, !isProcessingQueue, !isDeletingArchivedDay, !isLoadingRemote else {
             throw AppServiceError.message("Дождитесь завершения загрузки или отправки маршрута.")
         }
         isDeletingArchivedDay = true
         defer { isDeletingArchivedDay = false }
-        try await service.deleteDay(date: date)
-        storage.deleteDay(date)
+        try await service.deleteDay(date: date, workType: deletedType)
+        storage.deleteDay(date, workType: deletedType)
         archiveMutationRevision += 1
-        for type in RouteWorkType.allCases { dailyMileageByDate.removeValue(forKey: type.storageKey(for: date)) }
-        if selectedDateKey == date {
+        for type in RouteWorkType.allCases where deletedType == nil || type == deletedType {
+            dailyMileageByDate.removeValue(forKey: type.storageKey(for: date))
+        }
+        if selectedDateKey == date, deletedType == nil || workType == deletedType {
             record = RouteLocalStorage.defaultDay(for: date, workType: workType, settings: routeSettings)
             record.periodStartOdometer = storage.loadPeriodStartOdometer(for: String(date.prefix(7)))
             refreshAddressOptions()
@@ -857,7 +862,7 @@ struct RouteMonthlyMileage: Hashable {
     private func markSubmitted(_ submitted: RouteDayRecord) {
         // Keep edits made while the request was in flight, including another day.
         guard storage.loadDay(submitted.date, workType: submitted.workType) == submitted else { return }
-        storage.finishExplicitRestore(submitted.date)
+        storage.finishExplicitRestore(submitted.date, workType: submitted.workType)
         var saved = submitted
         saved.sent = true
         storage.saveDay(saved)
@@ -916,7 +921,7 @@ struct RouteMonthlyMileage: Hashable {
         guard !queue.isEmpty else { return }
 
         for item in queue {
-            guard !storage.isExcluded(item.date) || storage.isPendingRestore(item.date) else { storage.dequeue(item.date, workType: item.workType); continue }
+            guard !storage.isExcluded(item.date, workType: item.workType) || storage.isPendingRestore(item.date, workType: item.workType) else { storage.dequeue(item.date, workType: item.workType); continue }
             var day = storage.loadDay(item.date, workType: item.workType)
             guard Self.hasDataToSend(day) else {
                 storage.dequeue(item.date, workType: item.workType)
@@ -960,7 +965,8 @@ struct RouteMonthlyMileage: Hashable {
         do {
             let remoteRecords = try await service.fetchAllDays(settings: routeSettings)
             guard archiveMutationRevision == revision else { return }
-            if hasAutomaticStart, record == requestedRecord, endpointEditRevision == requestedEndpointRevision {
+            if hasAutomaticStart, record == requestedRecord, endpointEditRevision == requestedEndpointRevision,
+               !storage.loadQueue().contains(where: { $0.date == record.date && $0.workType == record.workType }) {
                 let inherited = storage.newDay(for: record.date, workType: record.workType, history: remoteRecords)
                 if record.stops.first?.address != inherited.stops.first?.address, !record.stops.isEmpty {
                     record.stops[0].address = inherited.stops[0].address
@@ -969,7 +975,7 @@ struct RouteMonthlyMileage: Hashable {
                 }
             }
             let localDays = storage.loadAllDays()
-            for day in remoteRecords where day.date < record.date && !storage.isExcluded(day.date) &&
+            for day in remoteRecords where day.date < record.date && !storage.isExcluded(day.date, workType: day.workType) &&
                 localDays[day.workType.storageKey(for: day.date)] == nil {
                 storage.saveDay(day)
             }
@@ -1109,8 +1115,8 @@ final class RouteArchiveStore {
         }
     }
 
-    func removeDeletedDay(_ date: String) {
-        records.removeAll { $0.date == date }
+    func removeDeletedDay(_ date: String, workType: RouteWorkType? = nil) {
+        records.removeAll { $0.date == date && (workType == nil || $0.workType == workType) }
     }
 
     func loadIfNeeded() async {
@@ -1128,7 +1134,8 @@ final class RouteArchiveStore {
         do {
             let remoteRecords = try await service.fetchAllDays(settings: settings)
             records = remoteRecords
-            for record in remoteRecords {
+            for var record in remoteRecords {
+                record.sent = true
                 storage.saveDay(record)
             }
         } catch is CancellationError {

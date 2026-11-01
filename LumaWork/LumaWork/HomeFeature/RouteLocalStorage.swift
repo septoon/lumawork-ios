@@ -71,13 +71,22 @@ final class RouteLocalStorage {
             savePeriodStartOdometer(recordValue, for: monthKey)
             periodStartOdometer = recordValue
         }
-        let normalized = Self.normalize(
+        var normalized = Self.normalize(
             migrated,
             date: date,
             workType: workType,
             settings: settings,
             periodStartOdometer: periodStartOdometer
         )
+        if !normalized.sent, !normalized.hasManualEndpointSelection,
+           !loadQueue().contains(where: { $0.date == date && $0.workType == workType }) {
+            let inherited = newDay(for: date, workType: workType)
+            if normalized.stops.first?.address != inherited.stops.first?.address, !normalized.stops.isEmpty {
+                normalized.stops[0].address = inherited.stops[0].address
+                normalized.distanceKm = nil
+                saveDailyMileage(nil, for: date, workType: workType)
+            }
+        }
         all[storageKey] = normalized
         saveAllDays(all)
         return normalized
@@ -87,8 +96,13 @@ final class RouteLocalStorage {
         let settings = loadSettings()
         let days = loadAllDays().merging(Dictionary(history.map { ($0.workType.storageKey(for: $0.date), $0) },
             uniquingKeysWith: { _, newer in newer }), uniquingKeysWith: { local, remote in Self.isWorkingDay(local) ? local : remote })
-        let previous = days.values.filter { day in
-            day.date < date && !isExcluded(day.date) && Self.isWorkingDay(day)
+        // Remote history consists of uploaded reports, including legacy records with sent=false.
+        let remoteSameDay = history.last { $0.date == date && $0.workType != workType && !isExcluded($0.date, workType: $0.workType) }
+        let sameDay = remoteSameDay ?? days.values.first { day in
+            day.date == date && day.workType != workType && day.sent && !isExcluded(day.date, workType: day.workType)
+        }
+        let previous = sameDay ?? days.values.filter { day in
+            day.date < date && !isExcluded(day.date, workType: day.workType) && Self.isWorkingDay(day)
         }.max { lhs, rhs in
             lhs.date == rhs.date ? lhs.workType != workType && rhs.workType == workType : lhs.date < rhs.date
         }
@@ -130,21 +144,33 @@ final class RouteLocalStorage {
         }
     }
 
-    func isPendingRestore(_ date: String) -> Bool { (defaults.stringArray(forKey: pendingRestoresKey) ?? []).contains(date) }
-    func beginExplicitRestore(_ date: String) {
-        guard isExcluded(date) else { return }
+    func isPendingRestore(_ date: String, workType: RouteWorkType = .pos) -> Bool {
+        let values = Set(defaults.stringArray(forKey: pendingRestoresKey) ?? [])
+        return values.contains(date) || values.contains(workType.exclusionKey(for: date))
+    }
+    func beginExplicitRestore(_ date: String, workType: RouteWorkType = .pos) {
+        guard isExcluded(date, workType: workType) else { return }
         var values = Set(defaults.stringArray(forKey: pendingRestoresKey) ?? [])
-        values.insert(date)
+        values.insert(workType.exclusionKey(for: date))
         defaults.set(Array(values), forKey: pendingRestoresKey)
     }
-    func finishExplicitRestore(_ date: String) {
-        let values = Set(defaults.stringArray(forKey: pendingRestoresKey) ?? []).subtracting([date])
-        defaults.set(Array(values), forKey: pendingRestoresKey)
-        setExcluded(date, excluded: false)
+    func finishExplicitRestore(_ date: String, workType: RouteWorkType = .pos) {
+        let key = workType.exclusionKey(for: date)
+        let pending = Set(defaults.stringArray(forKey: pendingRestoresKey) ?? []).subtracting([date, key])
+        defaults.set(Array(pending), forKey: pendingRestoresKey)
+        var excluded = Set(defaults.stringArray(forKey: excludedDatesKey) ?? [])
+        if excluded.remove(date) != nil {
+            for type in RouteWorkType.allCases where type != workType { excluded.insert(type.exclusionKey(for: date)) }
+        }
+        excluded.remove(key)
+        defaults.set(Array(excluded), forKey: excludedDatesKey)
     }
 
     var hasExcludedDatesSnapshot: Bool { defaults.object(forKey: excludedDatesKey) != nil }
-    func isExcluded(_ date: String) -> Bool { (defaults.stringArray(forKey: excludedDatesKey) ?? []).contains(date) }
+    func isExcluded(_ date: String, workType: RouteWorkType = .pos) -> Bool {
+        let values = Set(defaults.stringArray(forKey: excludedDatesKey) ?? [])
+        return values.contains(date) || values.contains(workType.exclusionKey(for: date))
+    }
     func setExcluded(_ date: String, excluded: Bool) {
         var values = Set(defaults.stringArray(forKey: excludedDatesKey) ?? [])
         if excluded { values.insert(date) } else { values.remove(date) }
@@ -152,28 +178,34 @@ final class RouteLocalStorage {
     }
     func syncExcludedDates(_ dates: [String]) {
         defaults.set(dates, forKey: excludedDatesKey)
-        for date in dates {
-            guard !isPendingRestore(date) else { continue }
-            if loadAllDays().values.contains(where: { $0.date == date && $0.sent }) || loadQueue().contains(where: { $0.date == date }) {
-                deleteDay(date)
-            }
+        let queued = loadQueue()
+        for day in loadAllDays().values where isExcluded(day.date, workType: day.workType)
+            && !isPendingRestore(day.date, workType: day.workType)
+            && (day.sent || queued.contains { $0.date == day.date && $0.workType == day.workType }) {
+            deleteDay(day.date, workType: day.workType)
+        }
+        for item in queued where isExcluded(item.date, workType: item.workType) && !isPendingRestore(item.date, workType: item.workType) {
+            deleteDay(item.date, workType: item.workType)
         }
     }
 
-    func deleteDay(_ date: String) {
-        finishExplicitRestore(date)
-        setExcluded(date, excluded: true)
+    func deleteDay(_ date: String, workType: RouteWorkType? = nil) {
+        let types = workType.map { [$0] } ?? RouteWorkType.allCases
+        let pendingKeys = Set(types.map { $0.exclusionKey(for: date) } + [date])
+        let pending = Set(defaults.stringArray(forKey: pendingRestoresKey) ?? []).subtracting(pendingKeys)
+        defaults.set(Array(pending), forKey: pendingRestoresKey)
+        setExcluded(workType?.exclusionKey(for: date) ?? date, excluded: true)
         var days = loadAllDays()
-        days = days.filter { $0.value.date != date }
+        days = days.filter { $0.value.date != date || !types.contains($0.value.workType) }
         saveAllDays(days)
         pendingDaysSave?.cancel()
         saveAllDaysImmediately(days)
-        for workType in RouteWorkType.allCases {
-            dequeue(date, workType: workType)
-            saveDailyMileage(nil, for: date, workType: workType)
+        for type in types {
+            dequeue(date, workType: type)
+            saveDailyMileage(nil, for: date, workType: type)
         }
         var appleMileages = loadAppleMileages()
-        for workType in RouteWorkType.allCases { appleMileages.removeValue(forKey: workType.storageKey(for: date)) }
+        for type in types { appleMileages.removeValue(forKey: type.storageKey(for: date)) }
         if let data = try? JSONEncoder().encode(appleMileages) { defaults.set(data, forKey: appleMileageKey) }
     }
 
@@ -441,10 +473,6 @@ final class RouteLocalStorage {
 
         if cloned.count < 2 {
             return defaultFallback(base: base, firstReason: firstReason, lastReason: lastReason)
-        }
-
-        if cloned.count == 2 {
-            cloned.insert(base[safe: 1] ?? makeStop(status: .pending), at: 1)
         }
 
         let lastIndex = cloned.count - 1

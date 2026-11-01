@@ -166,6 +166,8 @@ enum RouteWorkType: String, CaseIterable, Codable, Hashable, Identifiable, Senda
         }
     }
 
+    func exclusionKey(for date: String) -> String { "\(date)|\(rawValue)" }
+
     func storageKey(for date: String) -> String {
         self == .pos ? date : "\(date)|\(rawValue)"
     }

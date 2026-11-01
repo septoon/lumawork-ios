@@ -4,6 +4,17 @@ import Foundation
 struct RouteDayDeletionTests {
     static func main() throws {
         testPreviousDayEndpoint()
+        testScopedDeletion()
+        testSameDayWorkTypeStart()
+        let emptyRouteSuite = "route-stop-delete-tests-\(UUID().uuidString)"
+        let emptyRouteDefaults = UserDefaults(suiteName: emptyRouteSuite)!
+        defer { emptyRouteDefaults.removePersistentDomain(forName: emptyRouteSuite) }
+        let emptyRouteStorage = RouteLocalStorage(defaults: emptyRouteDefaults)
+        var emptyRoute = RouteLocalStorage.defaultDay(for: "2026-11-01", settings: .default)
+        emptyRoute.stops.remove(at: 1)
+        emptyRouteStorage.saveDay(emptyRoute, immediately: true)
+        let reopenedRoute = RouteLocalStorage(defaults: emptyRouteDefaults).loadDay(emptyRoute.date)
+        precondition(reopenedRoute.stops == emptyRoute.stops, "Deleting the last middle point must survive reloading")
         let suite = "route-delete-tests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -47,6 +58,72 @@ struct RouteDayDeletionTests {
         precondition(!reloaded.isExcluded(date))
         precondition(!reloaded.isPendingRestore(date))
         print("PASS: date removes POS/ARM, queue, mileage and Apple cache; preserves other dates/month odometer; persists and permits re-add")
+    }
+
+    static func testSameDayWorkTypeStart() {
+        for sourceType in RouteWorkType.allCases { for finish in ["Дом", "Склад"] {
+            let suite = "same-day-route-start-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let storage = RouteLocalStorage(defaults: defaults)
+            storage.saveSettings(RouteSettings(warehouseAddress: "Склад", homeAddress: "Дом"))
+            let date = "2026-11-01"
+            let targetType: RouteWorkType = sourceType == .pos ? .arm : .pos
+            // The target may have been viewed before the source was sent.
+            _ = storage.loadDay(date, workType: targetType)
+            var source = RouteLocalStorage.defaultDay(for: date, workType: sourceType, settings: storage.loadSettings())
+            source.stops[source.stops.count - 1].address = finish
+            source.sent = true
+            storage.saveDay(source, immediately: true)
+            precondition(storage.loadDay(date, workType: targetType).stops.first?.address == finish,
+                         "Same-day sent report must supply the other type's start, including an existing draft")
+            var manual = storage.loadDay(date, workType: targetType)
+            manual.stops[0].address = finish == "Дом" ? "Склад" : "Дом"
+            manual.hasManualEndpointSelection = true
+            storage.saveDay(manual, immediately: true)
+            precondition(storage.loadDay(date, workType: targetType).stops[0].address == manual.stops[0].address)
+        } }
+        print("PASS: POS/ARM inherit same-day sent home/warehouse finish and preserve manual starts")
+    }
+
+    static func testScopedDeletion() {
+        for deletedType in RouteWorkType.allCases {
+            let suite = "scoped-route-delete-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            var storage: RouteLocalStorage? = RouteLocalStorage(defaults: defaults)
+            let date = "2026-11-01"
+            for type in RouteWorkType.allCases {
+                var day = RouteLocalStorage.defaultDay(for: date, workType: type, settings: .default)
+                day.distanceKm = 12
+                day.periodStartOdometer = 1000
+                day.sent = true
+                storage!.saveDay(day, immediately: true)
+                storage!.enqueue(date, workType: type)
+                storage!.saveAppleMileage(AppleRouteDistanceSnapshot(addresses: [], distanceKm: 12), for: type.storageKey(for: date))
+            }
+            storage!.deleteDay(date, workType: deletedType)
+            storage = nil
+            let reloaded = RouteLocalStorage(defaults: defaults)
+            let otherType: RouteWorkType = deletedType == .pos ? .arm : .pos
+            precondition(reloaded.loadAllDays().values.map(\.workType) == [otherType])
+            precondition(reloaded.loadQueue().map(\.workType) == [otherType])
+            precondition(reloaded.loadDailyMileageByDate().values.reduce(0, +) == 12)
+            precondition(reloaded.loadAppleMileage(for: deletedType.storageKey(for: date)) == nil)
+            precondition(reloaded.loadAppleMileage(for: otherType.storageKey(for: date)) != nil)
+            precondition(reloaded.loadPeriodStartOdometer(for: "2026-11") == 1000)
+            precondition(reloaded.isExcluded(date, workType: deletedType))
+            precondition(!reloaded.isExcluded(date, workType: otherType))
+            reloaded.finishExplicitRestore(date, workType: otherType)
+            precondition(reloaded.isExcluded(date, workType: deletedType), "Sending the other type must not undo deletion")
+            reloaded.beginExplicitRestore(date, workType: deletedType)
+            precondition(reloaded.isPendingRestore(date, workType: deletedType))
+            reloaded.syncExcludedDates([deletedType.exclusionKey(for: date)])
+            precondition(reloaded.loadQueue().map(\.workType) == [otherType])
+            reloaded.finishExplicitRestore(date, workType: deletedType)
+            precondition(!reloaded.isExcluded(date, workType: deletedType))
+        }
+        print("PASS: scoped POS/ARM deletion preserves the other type, queue, mileage, Apple cache and monthly odometer across reload")
     }
 
     static func testPreviousDayEndpoint() {
