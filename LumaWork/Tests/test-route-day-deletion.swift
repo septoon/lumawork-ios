@@ -3,6 +3,7 @@ import Foundation
 @main
 struct RouteDayDeletionTests {
     static func main() throws {
+        try testClosedRequestsReimportAfterDeletion()
         testPreviousDayEndpoint()
         testScopedDeletion()
         testSameDayWorkTypeStart()
@@ -58,6 +59,39 @@ struct RouteDayDeletionTests {
         precondition(!reloaded.isExcluded(date))
         precondition(!reloaded.isPendingRestore(date))
         print("PASS: date removes POS/ARM, queue, mileage and Apple cache; preserves other dates/month odometer; persists and permits re-add")
+    }
+
+    static func testClosedRequestsReimportAfterDeletion() throws {
+        let requests = try JSONDecoder().decode([ClosedRequestRecord].self, from: Data(#"[{"requestNumber":"REQ","shortDescription":"","status":"Закрыто","engineerShift":"","workgroup":"","requestType":"","address":"Ялта, Ленина, 1","customer":"Клиент","engineerName":"","terminalModel":"","engineerComment":"","closedAt":"01.11.2026","terminalID":"001","incomingNumber":"000123","infoFields":[],"rawInfo":""}]"#.utf8))
+        for deletedType: RouteWorkType? in [nil, .pos] {
+            let suite = "route-reimport-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let storage = RouteLocalStorage(defaults: defaults)
+            let date = "2026-11-01"
+            var day = RouteLocalStorage.defaultDay(for: date, settings: .default)
+            day.sent = true
+            day.distanceKm = 30
+            storage.saveDay(day, immediately: true)
+            storage.deleteDay(date, workType: deletedType)
+            let importer = RouteImportHarness(storage: storage, date: date)
+            importer.isDeletingArchivedDay = true
+            precondition(!importer.autoImportClosedRequestsIfEmpty(requests), "Do not import while deletion is in progress")
+            importer.isDeletingArchivedDay = false
+            importer.areArchiveExclusionsReady = false
+            precondition(importer.autoImportClosedRequestsIfEmpty(requests), "Deleted routes must allow closed request reimport")
+            precondition(importer.record.stops[1].address == "Ялта, Ленина, 1")
+            precondition(importer.record.stops[1].requestNumber == "000123")
+            precondition(!importer.record.sent && importer.record.distanceKm == nil)
+            precondition(storage.isExcluded(date), "Reimporting a draft must not restore the deleted report")
+            storage.syncExcludedDates([deletedType?.exclusionKey(for: date) ?? date])
+            let reopened = RouteImportHarness(storage: RouteLocalStorage(defaults: defaults), date: date)
+            precondition(reopened.record == importer.record, "Imported addresses and numbers must survive reentry and exclusion sync")
+            precondition(!reopened.autoImportClosedRequestsIfEmpty(requests), "Do not duplicate or overwrite existing points")
+            let arm = RouteImportHarness(storage: storage, date: date, workType: .arm)
+            precondition(!arm.autoImportClosedRequestsIfEmpty(requests), "Closed requests remain POS-only")
+        }
+        print("PASS: whole-day/scoped deletion permits closed request reimport; draft survives reload and does not restore the sent report")
     }
 
     static func testSameDayWorkTypeStart() {

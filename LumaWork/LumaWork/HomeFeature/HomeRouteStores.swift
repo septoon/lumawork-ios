@@ -674,7 +674,7 @@ struct RouteMonthlyMileage: Hashable {
     }
 
     func autoImportClosedRequestsIfEmpty(_ requests: [ClosedRequestRecord]) -> Bool {
-        guard workType == .pos, areArchiveExclusionsReady, !storage.isExcluded(selectedDateKey, workType: workType) else { return false }
+        guard workType == .pos, !isDeletingArchivedDay else { return false }
         guard !hasCurrentRouteData, !requests.isEmpty else { return false }
         guard let firstStop = record.stops.first, let lastStop = record.stops.last else { return false }
 

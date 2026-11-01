@@ -771,6 +771,8 @@ struct HomeScreen: View {
             routeStore.selectedDateKey,
             routeStore.workType.rawValue,
             routeStore.areArchiveExclusionsReady ? "exclusions-ready" : "exclusions-loading",
+            routeStore.isDeletingArchivedDay ? "route-deleting" : "route-ready",
+            isRoutesArchivePresented ? "archive-open" : "archive-closed",
             routeStore.isLoadingRemote ? "remote-loading" : "remote-ready",
             closedRequestsStore.isLoadingSnapshot ? "requests-loading" : "requests-ready",
             "\(closedRequestsStore.snapshot?.importedAt.timeIntervalSinceReferenceDate ?? 0)"
@@ -779,6 +781,8 @@ struct HomeScreen: View {
 
     private func autoImportClosedRequestsIfNeeded() async {
         guard routeStore.workType == .pos,
+              !isRoutesArchivePresented,
+              !routeStore.isDeletingArchivedDay,
               !routeStore.isLoadingRemote,
               !closedRequestsStore.isLoadingSnapshot,
               !routeStore.hasCurrentRouteData else {
