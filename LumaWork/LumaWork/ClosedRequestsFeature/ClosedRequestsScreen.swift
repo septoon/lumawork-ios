@@ -92,6 +92,9 @@ struct ClosedRequestsScreen: View {
                     if !store.isLoadingSnapshot, !closedRequests.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             closedRequestsHeader
+                            if store.isSynchronizingClosedRequests {
+                                closedSyncProgressRow
+                            }
 
                             if let currentDay = visibleClosedDay {
                                 ClosedRequestDayHeader(
@@ -430,6 +433,8 @@ struct ClosedRequestsScreen: View {
 
                 if isRefreshingClosedRequestsArchive {
                     closedArchiveProgressCard
+                } else if store.isSynchronizingClosedRequests, closedRequests.isEmpty {
+                    closedSyncProgressRow
                 }
 
                 requestsModePage(requestsMode)

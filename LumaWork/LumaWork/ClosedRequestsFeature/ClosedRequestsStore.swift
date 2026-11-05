@@ -1,5 +1,9 @@
 import Foundation
 import Observation
+import OSLog
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @MainActor
 @Observable
@@ -12,10 +16,17 @@ final class ClosedRequestsStore {
     var isLoadingSnapshot = false
     var isDeleting = false
     var isSynchronizingClosedRequests = false
+    private(set) var closedSyncProgressText: String?
     var errorMessage: String?
     var notice: String?
     private(set) var recordsRevision: UInt64 = 0
     @ObservationIgnored private var closedSyncGeneration: UInt64 = 0
+    @ObservationIgnored private var closedSyncTask: Task<Int, Error>?
+    @ObservationIgnored private var closedSyncTaskToken: UUID?
+    @ObservationIgnored private var closedSyncTaskScope: ClosedRequestsSyncScope?
+    @ObservationIgnored private var closedSyncAuthKey: String?
+    @ObservationIgnored private var closedSyncPendingChanges: [SimpleOneClosedSyncChange] = []
+    @ObservationIgnored private var closedSyncCheckpointAt: Date?
 
     init() {
         Task {
@@ -228,11 +239,13 @@ final class ClosedRequestsStore {
             watermark = nil
         }
         let knownVersionsBySysID: [String: String]
-        if (watermark != nil || requiresWideRestart), state?.userID == userID {
+        let mayReuseVersions = state?.requiresNarrowFullReconciliation != true
+            || state?.hasVerifiedReconciliationVersions == true
+        if state?.userID == userID, mayReuseVersions {
             knownVersionsBySysID = state?.recordsBySysID.reduce(into: [:]) { result, entry in
                 let metadata = entry.value
-                if storedRequestNumbers.contains(metadata.requestNumber)
-                    || metadata.excludedFromArchive == true {
+                if !metadata.sysUpdatedAt.isEmpty, (storedRequestNumbers.contains(metadata.requestNumber)
+                    || metadata.excludedFromArchive == true) {
                     result[entry.key] = metadata.sysUpdatedAt
                 }
             } ?? [:]
@@ -249,6 +262,151 @@ final class ClosedRequestsStore {
     func finishClosedRequestsSync(generation: UInt64) {
         guard generation == closedSyncGeneration else { return }
         isSynchronizingClosedRequests = false
+    }
+
+    func cancelClosedRequestsSync() {
+        closedSyncGeneration &+= 1
+        closedSyncTask?.cancel()
+        closedSyncTask = nil
+        closedSyncTaskToken = nil
+        closedSyncTaskScope = nil
+        closedSyncAuthKey = nil
+        closedSyncPendingChanges = []
+        closedSyncCheckpointAt = nil
+        isSynchronizingClosedRequests = false
+        closedSyncProgressText = nil
+    }
+
+    @discardableResult
+    func synchronizeFromSimpleOne(
+        _ simpleOneStore: SimpleOneRequestsStore,
+        scope: ClosedRequestsSyncScope,
+        waitsForCurrentSync: Bool = false
+    ) async throws -> Int {
+        guard let authKey = simpleOneStore.browserAuthKey, simpleOneStore.isAuthorized else {
+            throw SimpleOneServiceError.missingCredentials
+        }
+        if let existing = closedSyncTask {
+            if closedSyncAuthKey != authKey {
+                cancelClosedRequestsSync()
+                _ = try? await existing.value
+            } else if waitsForCurrentSync, scope == .narrow, closedSyncTaskScope == .wide {
+                // A user asking for fresh requests takes priority over historical repair.
+                cancelClosedRequestsSync()
+                _ = try? await existing.value
+            } else if scope == closedSyncTaskScope || closedSyncTaskScope == .wide {
+                return try await existing.value
+            } else {
+                guard waitsForCurrentSync else { return 0 }
+                _ = try await existing.value
+                return try await synchronizeFromSimpleOne(simpleOneStore, scope: scope, waitsForCurrentSync: true)
+            }
+        }
+        if waitsForCurrentSync { try await waitForClosedRequestsSyncAvailability() }
+        try Task.checkCancellation()
+        let userID = try await simpleOneStore.closedSyncUserID()
+        // Another caller can have started a task while user lookup was suspended.
+        if closedSyncTask != nil {
+            return try await synchronizeFromSimpleOne(simpleOneStore, scope: scope, waitsForCurrentSync: waitsForCurrentSync)
+        }
+        guard simpleOneStore.isAuthorized, simpleOneStore.browserAuthKey == authKey else { throw CancellationError() }
+        guard let context = beginClosedRequestsSync(userID: userID, scope: scope) else {
+            if waitsForCurrentSync { throw SimpleOneServiceError.server("Не удалось начать обновление закрытых заявок. Повторите попытку.") }
+            return 0
+        }
+
+        let token = UUID()
+        closedSyncTaskToken = token
+        closedSyncTaskScope = scope
+        closedSyncAuthKey = authKey
+        closedSyncPendingChanges = []
+        closedSyncCheckpointAt = nil
+        closedSyncProgressText = scope == .narrow ? "Проверяю последние закрытые заявки…" : "Проверяю историю закрытых заявок…"
+        let startedAt = Date()
+        let logger = Logger(subsystem: "LumaWork", category: "ClosedRequestsSync")
+        logger.info("Started scope=\(scope.rawValue, privacy: .public), knownVersions=\(context.knownVersionsBySysID.count)")
+        let task = Task { @MainActor [weak self] () throws -> Int in
+            guard let self else { throw CancellationError() }
+#if canImport(UIKit)
+            let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ClosedRequestsSync") { [weak self] in
+                Task { @MainActor in
+                    if self?.closedSyncTaskToken == token { self?.cancelClosedRequestsSync() }
+                }
+            }
+            defer {
+                if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask) }
+            }
+#endif
+            defer {
+                finishClosedRequestsSync(generation: context.generation)
+                if closedSyncTaskToken == token {
+                    closedSyncTask = nil
+                    closedSyncTaskToken = nil
+                    closedSyncTaskScope = nil
+                    closedSyncAuthKey = nil
+                    closedSyncPendingChanges = []
+                    closedSyncProgressText = nil
+                }
+            }
+            do {
+                let batch = try await simpleOneStore.fetchClosedSyncChanges(
+                    scope: scope, since: context.watermark,
+                    knownVersionsBySysID: context.knownVersionsBySysID,
+                    onProgress: { [weak self] progress in
+                        try await self?.receiveClosedSyncProgress(
+                            progress, simpleOneStore: simpleOneStore, authKey: authKey,
+                            userID: userID, scope: scope, generation: context.generation
+                        )
+                    }
+                )
+                try Task.checkCancellation()
+                guard simpleOneStore.isAuthorized, simpleOneStore.browserAuthKey == authKey,
+                      closedSyncTaskToken == token else { throw CancellationError() }
+                let applied = await applyClosedRequestsSyncBatch(batch, generation: context.generation)
+                guard applied else { throw SimpleOneServiceError.server(errorMessage ?? "Не удалось сохранить закрытые заявки.") }
+                logger.info("Completed scope=\(scope.rawValue, privacy: .public), changes=\(batch.changes.count), durationMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
+                return batch.changes.lazy.compactMap(\.record).count
+            } catch {
+                if !Task.isCancelled, simpleOneStore.isAuthorized, simpleOneStore.browserAuthKey == authKey,
+                   closedSyncTaskToken == token {
+                    try? await flushClosedSyncCheckpoint(userID: userID, scope: scope, generation: context.generation)
+                }
+                if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
+                throw error
+            }
+        }
+        closedSyncTask = task
+        return try await task.value
+    }
+
+    private func receiveClosedSyncProgress(
+        _ progress: SimpleOneClosedSyncProgress,
+        simpleOneStore: SimpleOneRequestsStore, authKey: String,
+        userID: String, scope: ClosedRequestsSyncScope, generation: UInt64
+    ) async throws {
+        try Task.checkCancellation()
+        guard generation == closedSyncGeneration, simpleOneStore.isAuthorized,
+              simpleOneStore.browserAuthKey == authKey else { throw CancellationError() }
+        let title = scope == .narrow ? "Последние заявки" : "История"
+        let total = progress.totalCount.map { " из \($0)" } ?? ""
+        closedSyncProgressText = "\(title): проверено \(progress.scannedCount)\(total)"
+        closedSyncPendingChanges.append(contentsOf: progress.changes)
+        if closedSyncCheckpointAt == nil || Date().timeIntervalSince(closedSyncCheckpointAt!) >= 3 {
+            try await flushClosedSyncCheckpoint(userID: userID, scope: scope, generation: generation)
+        }
+    }
+
+    private func flushClosedSyncCheckpoint(userID: String, scope: ClosedRequestsSyncScope, generation: UInt64) async throws {
+        guard !closedSyncPendingChanges.isEmpty else { return }
+        let batch = SimpleOneClosedSyncBatch(
+            userID: userID, scope: scope, changes: closedSyncPendingChanges,
+            watermark: nil, totalCount: nil, isComplete: false
+        )
+        guard await applyClosedRequestsSyncBatch(batch, generation: generation) else {
+            throw SimpleOneServiceError.server(errorMessage ?? "Не удалось сохранить закрытые заявки.")
+        }
+        closedSyncPendingChanges = []
+        closedSyncCheckpointAt = Date()
     }
 
     func waitForClosedRequestsSyncAvailability() async throws {
@@ -282,8 +440,9 @@ final class ClosedRequestsStore {
         }
 
         do {
-            let application = try await Task.detached(priority: .utility) {
-                try Self.prepareClosedRequestsSyncBatch(batch, existingSnapshot: existingSnapshot)
+            let (application, data) = try await Task.detached(priority: .utility) {
+                let application = try Self.prepareClosedRequestsSyncBatch(batch, existingSnapshot: existingSnapshot)
+                return (application, try JSONEncoder().encode(application.snapshot))
             }.value
             guard generation == closedSyncGeneration else { return false }
             if let conflictRequestNumber = application.conflictRequestNumber {
@@ -291,12 +450,15 @@ final class ClosedRequestsStore {
                 errorMessage = "SimpleOne вернул конфликт идентификаторов для заявки \(conflictRequestNumber). Автообновление не применено."
                 return false
             }
+            // Validate the generation before committing; an old detached preparation
+            // must never overwrite a newer import or an authorization change.
+            try Self.saveSnapshotDataToDisk(data)
             snapshot = application.snapshot
             if application.recordsChanged {
                 recordsRevision &+= 1
             }
-            isSynchronizingClosedRequests = false
-            if application.recordsChanged {
+            if batch.isComplete { isSynchronizingClosedRequests = false }
+            if batch.isComplete, application.recordsChanged {
                 notice = "Закрытые заявки: +\(application.addedCount), обновлено \(application.updatedCount)."
             }
             return true
@@ -435,16 +597,30 @@ final class ClosedRequestsStore {
         var addedCount = 0
         var updatedCount = 0
         let now = Date()
+        // Older app versions retained server versions after manual XLSX overwrites.
+        // Only checkpoints produced by this reconciliation can vouch for their data.
+        if state.requiresNarrowFullReconciliation, state.hasVerifiedReconciliationVersions != true {
+            for sysID in Array(state.recordsBySysID.keys) {
+                state.recordsBySysID[sysID]?.sysUpdatedAt = ""
+            }
+        }
+        state.hasVerifiedReconciliationVersions = true
+        var sysIDByRequestNumber: [String: String] = [:]
+        var conflictingRequestNumbers = Set<String>()
+        for (sysID, metadata) in state.recordsBySysID {
+            if let otherID = sysIDByRequestNumber[metadata.requestNumber], otherID != sysID {
+                conflictingRequestNumbers.insert(metadata.requestNumber)
+            }
+            sysIDByRequestNumber[metadata.requestNumber] = sysID
+        }
 
         for change in batch.changes {
             if let record = change.record {
                 let conflictsWithSameID = state.recordsBySysID[change.sysID].map {
                     $0.requestNumber != record.requestNumber
                 } ?? false
-                let conflictsWithSameNumber = state.recordsBySysID.contains { sysID, metadata in
-                    sysID != change.sysID && metadata.requestNumber == record.requestNumber
-                }
-                if conflictsWithSameID || conflictsWithSameNumber {
+                let conflictsWithSameNumber = sysIDByRequestNumber[record.requestNumber].map { $0 != change.sysID } ?? false
+                if conflictsWithSameID || conflictsWithSameNumber || conflictingRequestNumbers.contains(record.requestNumber) {
                     return ClosedRequestsSyncApplication(
                         snapshot: existingSnapshot,
                         addedCount: 0,
@@ -469,27 +645,29 @@ final class ClosedRequestsStore {
                 lastSeenAt: now,
                 excludedFromArchive: change.excludedFromArchive
             )
+            sysIDByRequestNumber[change.requestNumber] = change.sysID
         }
 
-        switch batch.scope {
-        case .narrow:
-            state.narrowWatermark = batch.watermark ?? state.narrowWatermark
-            state.lastNarrowSuccessAt = now
-            state.requiresNarrowFullReconciliation = false
-        case .wide:
-            state.wideWatermark = batch.watermark ?? state.wideWatermark
-            state.wideConditionRevision = ClosedRequestsArchiveQuery.revision
-            state.lastWideSuccessAt = now
-            state.isWideBaselineTrusted = true
+        if batch.isComplete {
+            switch batch.scope {
+            case .narrow:
+                state.narrowWatermark = batch.watermark ?? state.narrowWatermark
+                state.lastNarrowSuccessAt = now
+                state.requiresNarrowFullReconciliation = false
+            case .wide:
+                state.wideWatermark = batch.watermark ?? state.wideWatermark
+                state.wideConditionRevision = ClosedRequestsArchiveQuery.revision
+                state.lastWideSuccessAt = now
+                state.isWideBaselineTrusted = true
+            }
         }
 
         let updatedSnapshot = ClosedRequestsSnapshot(
             fileName: existingSnapshot.fileName,
             importedAt: existingSnapshot.importedAt,
-            records: sortRecords(Array(recordsByNumber.values)),
+            records: addedCount > 0 || updatedCount > 0 ? sortRecords(Array(recordsByNumber.values)) : existingSnapshot.records,
             syncState: state
         )
-        try saveSnapshotToDisk(updatedSnapshot)
         return ClosedRequestsSyncApplication(
             snapshot: updatedSnapshot,
             addedCount: addedCount,
@@ -525,20 +703,23 @@ final class ClosedRequestsStore {
         }
         var addedCount = 0
         var updatedCount = 0
+        var overwrittenRequestNumbers = Set<String>()
 
         for record in incoming.records {
             if let current = recordsByRequestNumber[record.requestNumber] {
                 if current != record {
                     recordsByRequestNumber[record.requestNumber] = record
                     updatedCount += 1
+                    overwrittenRequestNumbers.insert(record.requestNumber)
                 }
             } else {
                 recordsByRequestNumber[record.requestNumber] = record
                 addedCount += 1
+                overwrittenRequestNumbers.insert(record.requestNumber)
             }
         }
 
-        let resetSyncState = manualImportSyncState(previous: existing.syncState)
+        let resetSyncState = manualImportSyncState(previous: existing.syncState, invalidating: overwrittenRequestNumbers)
 
         let mergedSnapshot = ClosedRequestsSnapshot(
             fileName: incoming.fileName,
@@ -557,9 +738,17 @@ final class ClosedRequestsStore {
     }
 
     nonisolated private static func manualImportSyncState(
-        previous: ClosedRequestsSyncState?
+        previous: ClosedRequestsSyncState?,
+        invalidating requestNumbers: Set<String> = []
     ) -> ClosedRequestsSyncState {
-        ClosedRequestsSyncState(
+        let invalidateAll = previous?.requiresNarrowFullReconciliation == true
+            && previous?.hasVerifiedReconciliationVersions != true
+        let versions = (previous?.recordsBySysID ?? [:]).mapValues { metadata in
+            var metadata = metadata
+            if invalidateAll || requestNumbers.contains(metadata.requestNumber) { metadata.sysUpdatedAt = "" }
+            return metadata
+        }
+        return ClosedRequestsSyncState(
             userID: previous?.userID ?? "",
             narrowWatermark: nil,
             wideWatermark: nil,
@@ -568,7 +757,8 @@ final class ClosedRequestsStore {
             lastWideSuccessAt: nil,
             isWideBaselineTrusted: false,
             requiresNarrowFullReconciliation: true,
-            recordsBySysID: previous?.recordsBySysID ?? [:]
+            hasVerifiedReconciliationVersions: true,
+            recordsBySysID: versions
         )
     }
 
@@ -589,16 +779,13 @@ final class ClosedRequestsStore {
     }
 
     nonisolated private static func sortRecords(_ records: [ClosedRequestRecord]) -> [ClosedRequestRecord] {
-        records.sorted { lhs, rhs in
-            let leftDate = parseClosedAt(sortDateText(for: lhs)) ?? .distantPast
-            let rightDate = parseClosedAt(sortDateText(for: rhs)) ?? .distantPast
-
-            if leftDate != rightDate {
-                return leftDate > rightDate
+        records.map { ($0, parseClosedAt(sortDateText(for: $0)) ?? .distantPast) }
+        .sorted { lhs, rhs in
+            if lhs.1 != rhs.1 {
+                return lhs.1 > rhs.1
             }
-
-            return lhs.requestNumber.localizedStandardCompare(rhs.requestNumber) == .orderedDescending
-        }
+            return lhs.0.requestNumber.localizedStandardCompare(rhs.0.requestNumber) == .orderedDescending
+        }.map(\.0)
     }
 
     nonisolated private static func sortDateText(for record: ClosedRequestRecord) -> String {
@@ -931,10 +1118,13 @@ final class ClosedRequestsStore {
     }
 
     nonisolated private static func saveSnapshotToDisk(_ snapshot: ClosedRequestsSnapshot) throws {
+        try saveSnapshotDataToDisk(JSONEncoder().encode(snapshot))
+    }
+
+    nonisolated private static func saveSnapshotDataToDisk(_ data: Data) throws {
         let fileURL = snapshotFileURL()
         let directoryURL = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
-        let data = try JSONEncoder().encode(snapshot)
         try data.write(to: fileURL, options: [.atomic])
     }
 

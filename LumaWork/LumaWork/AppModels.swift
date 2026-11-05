@@ -582,6 +582,7 @@ nonisolated struct ClosedRequestsSyncState: Codable, Hashable, Sendable {
     var lastWideSuccessAt: Date?
     var isWideBaselineTrusted: Bool
     var requiresNarrowFullReconciliation: Bool
+    var hasVerifiedReconciliationVersions: Bool? = nil
     var recordsBySysID: [String: ClosedRequestsSyncRecordMetadata]
 }
 

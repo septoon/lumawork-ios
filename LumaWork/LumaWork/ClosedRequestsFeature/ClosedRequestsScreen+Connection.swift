@@ -3,6 +3,17 @@ import OSLog
 import SwiftUI
 
 extension ClosedRequestsScreen {
+    var closedSyncProgressRow: some View {
+        HStack(spacing: 10) {
+            ProgressView().tint(AppTheme.primaryTint)
+            Text(store.closedSyncProgressText ?? "Обновляю закрытые заявки…")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppTheme.mutedTint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
     var closedArchiveProgressCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             AppLoadingView(title: "Обновляю закрытые заявки")
@@ -160,35 +171,29 @@ extension ClosedRequestsScreen {
         )
         guard simpleOneStore.errorMessage == nil else { return }
 
-        await refreshClosedRequestsIncrementally()
+        await refreshClosedRequestsIncrementally(includesFullHistory: true)
 
         if store.errorMessage == nil {
             store.notice = "Активные и закрытые заявки обновлены."
         }
     }
 
-    func refreshClosedRequestsIncrementally() async {
+    func refreshClosedRequestsIncrementally(includesFullHistory: Bool = false) async {
         store.errorMessage = nil
         store.notice = nil
-        do {
-            try await store.waitForClosedRequestsSyncAvailability()
-        } catch is CancellationError {
-            return
-        } catch {
-            store.errorMessage = appUserFacingErrorMessage(error)
-            return
-        }
-
         if store.snapshot == nil || store.needsMerchantTINRepair {
             await refreshClosedRequestsArchiveFromSimpleOne()
             return
         }
 
         _ = await synchronizeClosedRequestsAutomatically(
-            scope: .wide,
+            scope: .narrow,
             waitsForCurrentSync: true,
             reportsErrors: true
         )
+        if includesFullHistory, store.errorMessage == nil, !Task.isCancelled {
+            _ = await synchronizeClosedRequestsAutomatically(scope: .wide, waitsForCurrentSync: true, reportsErrors: true)
+        }
     }
 
     func refreshClosedRequestsArchiveFromSimpleOne() async {
@@ -320,8 +325,7 @@ extension ClosedRequestsScreen {
         reportsErrors: Bool = false
     ) async -> Int {
         guard simpleOneStore.isAuthorized,
-              !simpleOneStore.isLoading,
-              !isRefreshingSimpleOneData,
+              (waitsForCurrentSync || (!simpleOneStore.isLoading && !isRefreshingSimpleOneData)),
               !isRefreshingClosedRequestsArchive,
               !store.isImporting,
               !store.isDeleting else {

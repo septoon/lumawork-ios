@@ -131,6 +131,7 @@ final class AppDataStores {
         let identity = try? SimpleOneProtectedAccess.capture()
         guard identity != protectedIdentity else { return }
         protectedIdentity = identity
+        closedRequestsStore.cancelClosedRequestsSync()
         wikiStore.clearProtectedState(); ftpStore.clearProtectedState(); assistantStore.clearProtectedState()
         FTPBackgroundDownloadManager.shared.revokeUnauthorized()
         if identity != nil {

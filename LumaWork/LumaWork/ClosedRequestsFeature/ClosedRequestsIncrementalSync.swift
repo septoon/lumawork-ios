@@ -10,6 +10,7 @@ nonisolated struct SimpleOneClosedSyncListItem: Hashable, Sendable {
     var requestNumber: String
     var exportRow: [String: String]
     var missingColumns: Set<String>
+    var sysUpdatedAt: String? = nil
 }
 
 nonisolated struct SimpleOneClosedSyncPage: Hashable, Sendable {
@@ -32,6 +33,13 @@ nonisolated struct SimpleOneClosedSyncBatch: Hashable, Sendable {
     var changes: [SimpleOneClosedSyncChange]
     var watermark: ClosedRequestsSyncCursor?
     var totalCount: Int?
+    var isComplete = true
+}
+
+nonisolated struct SimpleOneClosedSyncProgress: Sendable {
+    var scannedCount: Int
+    var totalCount: Int?
+    var changes: [SimpleOneClosedSyncChange]
 }
 
 nonisolated struct ClosedRequestsSyncContext: Hashable, Sendable {
@@ -42,6 +50,11 @@ nonisolated struct ClosedRequestsSyncContext: Hashable, Sendable {
 
 nonisolated extension SimpleOneRequestsService {
     private static let closedSyncPageSize = 20
+    private static let closedSyncConcurrency = 6
+    private struct ClosedSyncCompletedRow: Sendable {
+        var cursor: ClosedRequestsSyncCursor
+        var change: SimpleOneClosedSyncChange?
+    }
 
     func fetchClosedSyncHead(
         userID: String,
@@ -53,10 +66,10 @@ nonisolated extension SimpleOneRequestsService {
             authKey: authKey,
             scope: scope,
             page: 1,
-            perPage: Self.closedSyncPageSize
+            perPage: 1
         )
         guard let first = page.items.first else { return nil }
-        return try await closedSyncCursor(for: first.sysID, authKey: authKey)
+        return try await closedSyncCursor(for: first, authKey: authKey)
     }
 
     func fetchClosedSyncChanges(
@@ -64,11 +77,13 @@ nonisolated extension SimpleOneRequestsService {
         authKey: String,
         scope: ClosedRequestsSyncScope,
         since watermark: ClosedRequestsSyncCursor?,
-        knownVersionsBySysID: [String: String]
+        knownVersionsBySysID: [String: String],
+        onProgress: @escaping @Sendable (SimpleOneClosedSyncProgress) async throws -> Void = { _ in }
     ) async throws -> SimpleOneClosedSyncBatch {
         var changesBySysID: [String: SimpleOneClosedSyncChange] = [:]
         var latestTotalCount: Int?
         var latestWatermark = watermark
+        var scanKnownVersions = knownVersionsBySysID
 
         for _ in 0 ..< 3 {
             let scan = try await scanClosedSyncChanges(
@@ -76,7 +91,8 @@ nonisolated extension SimpleOneRequestsService {
                 authKey: authKey,
                 scope: scope,
                 since: watermark,
-                knownVersionsBySysID: knownVersionsBySysID
+                knownVersionsBySysID: scanKnownVersions,
+                onProgress: onProgress
             )
             latestTotalCount = scan.totalCount ?? latestTotalCount
             if let anchor = scan.anchor, latestWatermark == nil || latestWatermark! < anchor {
@@ -87,6 +103,7 @@ nonisolated extension SimpleOneRequestsService {
                     continue
                 }
                 changesBySysID[change.sysID] = change
+                scanKnownVersions[change.sysID] = change.cursor.updatedAt
             }
 
             // An unchanged head needs no second request. A change that arrives after
@@ -127,7 +144,8 @@ nonisolated extension SimpleOneRequestsService {
         authKey: String,
         scope: ClosedRequestsSyncScope,
         since watermark: ClosedRequestsSyncCursor?,
-        knownVersionsBySysID: [String: String]
+        knownVersionsBySysID: [String: String],
+        onProgress: @escaping @Sendable (SimpleOneClosedSyncProgress) async throws -> Void
     ) async throws -> (
         changes: [SimpleOneClosedSyncChange],
         anchor: ClosedRequestsSyncCursor?,
@@ -139,6 +157,10 @@ nonisolated extension SimpleOneRequestsService {
         var anchor: ClosedRequestsSyncCursor?
         var previousCursor: ClosedRequestsSyncCursor?
         var totalCount: Int?
+        var scannedCount = 0
+        // Recent requests become visible after a small page; historical checks
+        // amortize list latency over larger pages supported by the same endpoint.
+        let perPage = scope == .wide ? 100 : Self.closedSyncPageSize
 
         while true {
             try Task.checkCancellation()
@@ -147,42 +169,81 @@ nonisolated extension SimpleOneRequestsService {
                 authKey: authKey,
                 scope: scope,
                 page: pageNumber,
-                perPage: Self.closedSyncPageSize
+                perPage: perPage
             )
             totalCount = page.totalCount ?? totalCount
             var reachedWatermark = false
+            let firstChangeIndex = changes.count
 
-            for item in page.items {
-                try Task.checkCancellation()
-                guard seenSysIDs.insert(item.sysID).inserted else { continue }
-                let cursor = try await closedSyncCursor(for: item.sysID, authKey: authKey)
-                if let previousCursor, cursor > previousCursor {
-                    throw SimpleOneServiceError.invalidResponse
+            let previousCount = seenSysIDs.count
+            let items = page.items.filter { seenSysIDs.insert($0.sysID).inserted }
+            // Keep a small sliding window, but consume results in server order.
+            // Speculative errors after the stopping boundary must not fail the scan.
+            try await withThrowingTaskGroup(of: (Int, Result<ClosedSyncCompletedRow, Error>).self) { group in
+                var nextToSchedule = 0
+                var nextToConsume = 0
+                var completed: [Int: Result<ClosedSyncCompletedRow, Error>] = [:]
+                func enqueue() {
+                    guard nextToSchedule < items.count else { return }
+                    let index = nextToSchedule
+                    let item = items[index]
+                    nextToSchedule += 1
+                    group.addTask {
+                        do {
+                            try Task.checkCancellation()
+                            let cursor = try await closedSyncCursor(for: item, authKey: authKey)
+                            let needsDetails = (watermark == nil || cursor.updatedAt >= watermark!.updatedAt)
+                                && !(knownVersionsBySysID[item.sysID].map { $0 >= cursor.updatedAt } ?? false)
+                            var change: SimpleOneClosedSyncChange?
+                            if needsDetails {
+                                let row = try await completeClosedSyncExportRow(item, authKey: authKey)
+                                let record = XLSXRequestsParser.record(fromExportRow: row)
+                                change = SimpleOneClosedSyncChange(
+                                    sysID: item.sysID, requestNumber: item.requestNumber,
+                                    cursor: cursor, record: record, excludedFromArchive: record == nil
+                                )
+                            }
+                            return (index, .success(ClosedSyncCompletedRow(cursor: cursor, change: change)))
+                        } catch {
+                            return (index, .failure(error))
+                        }
+                    }
                 }
-                previousCursor = cursor
-                if anchor == nil {
-                    anchor = cursor
+                for _ in 0..<min(Self.closedSyncConcurrency, items.count) { enqueue() }
+                defer { group.cancelAll() }
+                while let (index, result) = try await group.next() {
+                    completed[index] = result
+                    while let result = completed.removeValue(forKey: nextToConsume) {
+                        try Task.checkCancellation()
+                        let row = try result.get()
+                        scannedCount += 1
+                        let cursor = row.cursor
+                        if let previousCursor, cursor > previousCursor {
+                            throw SimpleOneServiceError.invalidResponse
+                        }
+                        previousCursor = cursor
+                        if anchor == nil { anchor = cursor }
+                        if let watermark, cursor.updatedAt < watermark.updatedAt {
+                            reachedWatermark = true
+                            return
+                        }
+                        if let change = row.change { changes.append(change) }
+                        nextToConsume += 1
+                        enqueue()
+                    }
                 }
-                if let watermark, cursor.updatedAt < watermark.updatedAt {
-                    reachedWatermark = true
-                    break
-                }
-                if let knownVersion = knownVersionsBySysID[item.sysID],
-                   knownVersion >= cursor.updatedAt {
-                    continue
-                }
-                let row = try await completeClosedSyncExportRow(item, authKey: authKey)
-                let record = XLSXRequestsParser.record(fromExportRow: row)
-                changes.append(SimpleOneClosedSyncChange(
-                    sysID: item.sysID,
-                    requestNumber: item.requestNumber,
-                    cursor: cursor,
-                    record: record,
-                    excludedFromArchive: record == nil
-                ))
             }
+            let hasMore = page.totalCount.map { seenSysIDs.count < $0 } ?? page.hasMore
+            if !reachedWatermark, hasMore, seenSysIDs.count == previousCount {
+                throw SimpleOneServiceError.invalidResponse
+            }
+            try await onProgress(SimpleOneClosedSyncProgress(
+                scannedCount: scannedCount,
+                totalCount: totalCount,
+                changes: Array(changes[firstChangeIndex...])
+            ))
 
-            guard !reachedWatermark, page.hasMore else { break }
+            guard !reachedWatermark, hasMore else { break }
             pageNumber += 1
         }
 
@@ -213,7 +274,8 @@ nonisolated extension SimpleOneRequestsService {
         components.queryItems = [
             URLQueryItem(name: "condition", value: condition),
             URLQueryItem(name: "page", value: String(page)),
-            URLQueryItem(name: "per_page", value: String(perPage))
+            URLQueryItem(name: "per_page", value: String(perPage)),
+            URLQueryItem(name: "columns", value: (["sys_id", "sys_updated_at", "multicard_merchant_tin"] + Self.closedSyncRequiredColumns).joined(separator: ","))
         ]
         guard let url = components.url else {
             throw SimpleOneServiceError.invalidURL
@@ -228,12 +290,14 @@ nonisolated extension SimpleOneRequestsService {
         return SimpleOneClosedSyncPage(
             items: items,
             totalCount: totalCount,
-            hasMore: totalCount.map { page * perPage < $0 } ?? (items.count == perPage)
+            // A server-side cap can be smaller than the requested page size.
+            // The scanner uses its accumulated unique count when a total exists;
+            // otherwise an empty page is the authoritative end of the list.
+            hasMore: !items.isEmpty
         )
     }
 
-    private func closedSyncListItem(from item: [String: Any]) throws -> SimpleOneClosedSyncListItem {
-        let requiredColumns = [
+    private static let closedSyncRequiredColumns = [
             "number", "short_description", "state", "multicard_request_type",
             "multicard_terminal_address", "multicard_name_client", "multicard_terminal_model",
             "description", "multicard_id_terminal", "multicard_comment_ing",
@@ -243,10 +307,12 @@ nonisolated extension SimpleOneRequestsService {
             "multicard_closing_date", "resolved_at", "sys_created_at", "new_closure_code",
             "closure_notes"
         ]
-        let missingColumns = Set(requiredColumns.filter {
+
+    private func closedSyncListItem(from item: [String: Any]) throws -> SimpleOneClosedSyncListItem {
+        let missingColumns = Set(Self.closedSyncRequiredColumns.filter {
             item[$0] == nil || !Self.closedSyncFieldIsReadable(item[$0])
         })
-        let sysID = stringValue(item["sys_id"])
+        let sysID = fieldString(item, "sys_id")
         let number = fieldString(item, "number")
         guard !sysID.isEmpty, !number.isEmpty else {
             throw SimpleOneServiceError.invalidResponse
@@ -304,7 +370,8 @@ nonisolated extension SimpleOneRequestsService {
             sysID: sysID,
             requestNumber: number,
             exportRow: row,
-            missingColumns: missingColumns
+            missingColumns: missingColumns,
+            sysUpdatedAt: Self.closedSyncCanonicalVersion(item["sys_updated_at"])
         )
     }
 
@@ -343,12 +410,12 @@ nonisolated extension SimpleOneRequestsService {
                 ("Решение", "closure_notes", false, false)
             ]
             for mapping in fallbackMappings where item.missingColumns.contains(mapping.key) {
-                guard let detailRawValue = fieldRawValue(detailItem ?? [:], mapping.key),
-                      Self.closedSyncFieldIsReadable(detailRawValue) else {
-                    throw SimpleOneServiceError.invalidResponse
-                }
+                let detailRawValue = fieldRawValue(detailItem ?? [:], mapping.key)
                 let value: String
-                if mapping.key == "state" {
+                if !Self.closedSyncFieldIsReadable(detailRawValue) {
+                    // Some readable list cells are absent even from the record form.
+                    value = try await fetchClosedSyncFieldValue(column: mapping.key, sysID: item.sysID, authKey: authKey)
+                } else if mapping.key == "state" {
                     value = Self.closedSyncDatabaseValue(detailItem?[mapping.key])
                 } else if mapping.display {
                     value = fieldDisplayString(detailItem ?? [:], mapping.key)
@@ -358,6 +425,9 @@ nonisolated extension SimpleOneRequestsService {
                 row[mapping.label] = mapping.date ? Self.closedSyncExportDate(value) : value
             }
         }
+        row["ИНН ТСП"] = ClosedRequestsMerchantTINSupport.resolvedTIN(
+            directTIN: row["ИНН ТСП"] ?? "", information: row["Информация"] ?? ""
+        )
         if ClosedRequestsMerchantTINSupport.needsRepair(row["ИНН ТСП"]) {
             if detailItem == nil {
                 detailItem = try await fetchClosedSyncDetailItem(sysID: item.sysID, authKey: authKey)
@@ -435,16 +505,28 @@ nonisolated extension SimpleOneRequestsService {
         return flattened
     }
 
-    private func closedSyncCursor(for sysID: String, authKey: String) async throws -> ClosedRequestsSyncCursor {
+    private func closedSyncCursor(for item: SimpleOneClosedSyncListItem, authKey: String) async throws -> ClosedRequestsSyncCursor {
+        if let updatedAt = item.sysUpdatedAt {
+            return ClosedRequestsSyncCursor(updatedAt: updatedAt, sysID: item.sysID)
+        }
         let updatedAt = try await fetchClosedSyncFieldValue(
             column: "sys_updated_at",
-            sysID: sysID,
+            sysID: item.sysID,
             authKey: authKey
         )
         guard !updatedAt.isEmpty else {
             throw SimpleOneServiceError.invalidResponse
         }
-        return ClosedRequestsSyncCursor(updatedAt: updatedAt, sysID: sysID)
+        return ClosedRequestsSyncCursor(updatedAt: updatedAt, sysID: item.sysID)
+    }
+
+    private static func closedSyncCanonicalVersion(_ raw: Any?) -> String? {
+        guard closedSyncFieldIsReadable(raw) else { return nil }
+        let value = closedSyncDatabaseValue(raw)
+        // Localized/display-only timestamps must use the authoritative cell endpoint.
+        guard value.count == 19,
+              value.range(of: #"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$"#, options: .regularExpression) != nil else { return nil }
+        return value
     }
 
     private func fetchClosedSyncFieldValue(
@@ -567,7 +649,8 @@ extension SimpleOneRequestsStore {
     func fetchClosedSyncChanges(
         scope: ClosedRequestsSyncScope,
         since watermark: ClosedRequestsSyncCursor?,
-        knownVersionsBySysID: [String: String]
+        knownVersionsBySysID: [String: String],
+        onProgress: @escaping @Sendable (SimpleOneClosedSyncProgress) async throws -> Void = { _ in }
     ) async throws -> SimpleOneClosedSyncBatch {
         let userID = try await closedSyncUserID()
         guard let authKey = browserAuthKey else {
@@ -579,52 +662,12 @@ extension SimpleOneRequestsStore {
                 authKey: authKey,
                 scope: scope,
                 since: watermark,
-                knownVersionsBySysID: knownVersionsBySysID
+                knownVersionsBySysID: knownVersionsBySysID,
+                onProgress: onProgress
             )
         } catch SimpleOneServiceError.unauthorized {
             signOut(clearUsername: false)
             throw SimpleOneServiceError.unauthorized
-        }
-    }
-}
-
-@MainActor
-extension ClosedRequestsStore {
-    @discardableResult
-    func synchronizeFromSimpleOne(
-        _ simpleOneStore: SimpleOneRequestsStore,
-        scope: ClosedRequestsSyncScope,
-        waitsForCurrentSync: Bool = false
-    ) async throws -> Int {
-        if waitsForCurrentSync {
-            try await waitForClosedRequestsSyncAvailability()
-        }
-
-        let userID = try await simpleOneStore.closedSyncUserID()
-        guard let context = beginClosedRequestsSync(userID: userID, scope: scope) else {
-            if waitsForCurrentSync {
-                throw SimpleOneServiceError.server(
-                    "Не удалось начать обновление закрытых заявок. Повторите попытку."
-                )
-            }
-            return 0
-        }
-
-        do {
-            let batch = try await simpleOneStore.fetchClosedSyncChanges(
-                scope: scope,
-                since: context.watermark,
-                knownVersionsBySysID: context.knownVersionsBySysID
-            )
-            let changedCount = batch.changes.lazy.compactMap(\.record).count
-            let applied = await applyClosedRequestsSyncBatch(
-                batch,
-                generation: context.generation
-            )
-            return applied ? changedCount : 0
-        } catch {
-            finishClosedRequestsSync(generation: context.generation)
-            throw error
         }
     }
 }
