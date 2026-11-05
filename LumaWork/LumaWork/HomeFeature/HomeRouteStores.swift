@@ -482,6 +482,18 @@ struct RouteMonthlyMileage: Hashable {
         notice = "Настройки маршрута сохранены."
     }
 
+    func applyProfileRouteAddresses(_ profile: UserProfileData) {
+        var settings = routeSettings
+        settings.warehouseAddress = profile.routeWarehouseAddress ?? ""
+        settings.homeAddress = profile.routeHomeAddress ?? ""
+        guard settings != routeSettings else { return }
+        let previous = routeSettings
+        routeSettings = settings
+        storage.saveSettings(settings)
+        if !record.sent { applySettingsAddressChanges(oldSettings: previous, newSettings: settings) }
+        refreshAddressOptions()
+    }
+
     func moveStop(_ id: String, direction: RouteMoveDirection) {
         guard let index = record.stops.firstIndex(where: { $0.id == id }) else { return }
         let targetIndex: Int
@@ -883,33 +895,8 @@ struct RouteMonthlyMileage: Hashable {
     }
 
     private func refreshAddressOptions() {
-        var addresses = Set<String>()
-        let all = storage.loadAllDays()
-
-        for day in all.values {
-            for stop in day.stops {
-                let trimmed = stop.address.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    addresses.insert(trimmed)
-                }
-            }
-        }
-
-        for stop in record.stops {
-            let trimmed = stop.address.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                addresses.insert(trimmed)
-            }
-        }
-
-        for address in [routeSettings.warehouseAddress, routeSettings.homeAddress] {
-            let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                addresses.insert(trimmed)
-            }
-        }
-
-        addressOptions = Array(addresses).sorted().prefix(100).map { $0 }
+        let warehouse = routeSettings.warehouseAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        addressOptions = warehouse.isEmpty ? [] : [warehouse]
     }
 
     private func processQueue() async {

@@ -813,7 +813,7 @@ final class ClosedRequestsStore {
                     return nil
                 }
 
-                let normalizedAddress = routeTemplateAddress(for: record)
+                let normalizedAddress = routeTemplateAddress(for: record, warehouseAddress: warehouseAddress)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !normalizedAddress.isEmpty else { return nil }
 
@@ -841,9 +841,9 @@ final class ClosedRequestsStore {
         return removingWarehouseEdges(from: deduped, warehouseAddress: warehouseAddress)
     }
 
-    nonisolated private static func routeTemplateAddress(for record: ClosedRequestRecord) -> String {
+    nonisolated private static func routeTemplateAddress(for record: ClosedRequestRecord, warehouseAddress: String) -> String {
         if isReturnEquipment(record.requestType) {
-            return RouteSettings.officeAddress
+            return warehouseAddress
         }
 
         return record.address.normalizedAddressStartingFromAlushta()

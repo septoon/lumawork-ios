@@ -131,7 +131,17 @@ struct ContentView: View {
             consumePendingRoute()
         }
         .task {
+            stores.homeStore.applyProfileRouteAddresses(sessionStore.userProfile)
             await stores.homeStore.loadIfNeeded()
+        }
+        .task(id: "\(stores.simpleOneStore.isAuthorized)|\(makeCoordinationSessionID(for: stores.simpleOneStore))|\(sessionStore.userProfile.city ?? "")|\(sessionStore.isOfflineMode)") {
+            await sessionStore.syncRouteAddresses()
+        }
+        .onChange(of: sessionStore.userProfile) { _, profile in
+            stores.homeStore.applyProfileRouteAddresses(profile)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gsmProfileSaved)) { _ in
+            Task { await sessionStore.syncRouteAddresses() }
         }
         .task(id: stores.homeStore.selectedMonthMileage) {
             guard let monthlyMileage = stores.homeStore.selectedMonthMileage else { return }

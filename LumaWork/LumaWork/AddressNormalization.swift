@@ -35,7 +35,10 @@ extension String {
     nonisolated func qualifiedRouteAddress() -> String {
         let address = normalizedAddressCommaSpacing()
         guard !address.isEmpty else { return address }
-        let hasExplicitCity = Self.routeCities.contains { address.localizedCaseInsensitiveContains($0) }
+        let first = String(address.split(separator: ",").first ?? "")
+        let cityPrefix = address.contains(",") && first.range(of: "^[\\p{L} .'-]+$", options: .regularExpression) != nil
+            && first.range(of: "(?i)(?:^|\\s)(?:ул\\.?|улица|проспект|пр-кт|пр-т|переулок|пер\\.?|шоссе|набережная|наб\\.?|площадь|пл\\.?)(?:\\s|$)", options: .regularExpression) == nil
+        let hasExplicitCity = cityPrefix || Self.routeCities.contains { address.localizedCaseInsensitiveContains($0) }
         return hasExplicitCity ? address : "Алушта, \(address)"
     }
 

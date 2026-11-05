@@ -158,6 +158,8 @@ struct AppleRouteDistanceTests {
         expect(AppleRouteAddressValidation.matches(query: "Алушта, Горького, 6-в", found: "улица Горького, 6в, Алушта"), "house letter survives separator normalization")
         expect("Алушта, Горького, 6-в".routeCoordinateKey != "Алушта, Горького, 6-б".routeCoordinateKey, "remembered addresses preserve house letters")
         expect("Ялта, Ленина, 1".routeCoordinateKey != "Алушта, Ленина, 1".routeCoordinateKey, "remembered addresses preserve towns")
+        expect(RouteSettings.default.warehouseAddress.isEmpty, "new accounts have no fixed warehouse")
+        expect("Ярославль, ул. Республиканская, д. 3, стр. 2".qualifiedRouteAddress() == "Ярославль, ул. Республиканская, д. 3, стр. 2", "other cities retain their own route location")
         let legacySettings = try decoder.decode(RouteSettings.self, from: Data("{\"warehouseAddress\":\"Склад\",\"homeAddress\":\"Дом\"}".utf8))
         expect(legacySettings.mapsProvider == .yandex, "existing settings default to Yandex")
         var settings = legacySettings

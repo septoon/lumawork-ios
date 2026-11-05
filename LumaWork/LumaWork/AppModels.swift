@@ -310,7 +310,7 @@ nonisolated struct RouteSettings: Codable, Hashable, Sendable {
     var mapsProvider: RouteMapsProvider
 
     static let legacyOfficeAddress = "ул. Снежковой 17Б"
-    static let officeAddress = "Алушта, ул. В. Хромых, 11"
+    static let officeAddress = ""
 
     static let `default` = RouteSettings(
         warehouseAddress: RouteSettings.officeAddress,

@@ -366,19 +366,29 @@ struct LumaWorkAuthAPI {
         return response.user
     }
 
+    func syncRouteAddresses(token: String, simpleOneAuth: String?) async throws -> AppUser {
+        let response: CurrentUserResponse = try await request(
+            path: "/api/v2/profile/route-addresses/sync", method: "POST", token: token,
+            extraHeaders: simpleOneAuth.map { ["X-SimpleOne-Auth": $0] } ?? [:]
+        )
+        return response.user
+    }
+
     private func request<Response: Decodable>(
         path: String,
         method: String = "GET",
         body: [String: String]? = nil,
         token: String? = nil,
         timeoutInterval: TimeInterval = 45,
-        maxAttempts: Int = 2
+        maxAttempts: Int = 2,
+        extraHeaders: [String: String] = [:]
     ) async throws -> Response {
         var request = URLRequest(url: baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))))
         request.httpMethod = method
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = timeoutInterval
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        for (name, value) in extraHeaders { request.setValue(value, forHTTPHeaderField: name) }
         AppBuildIdentity.apply(to: &request)
         if path == "/me" || path == "/auth/verify-code" {
             AppDeviceIdentity.apply(to: &request)
@@ -724,6 +734,19 @@ final class AppSessionStore {
             errorMessage = appUserFacingErrorMessage(error)
         }
         isLoading = false
+    }
+
+    func syncRouteAddresses() async {
+        guard let original = session, !isOfflineMode else { return }
+        let access = try? SimpleOneProtectedAccess.capture(ownerID: original.user.id, authToken: original.token)
+        do {
+            let user = try await api.syncRouteAddresses(token: original.token, simpleOneAuth: access?.authKey)
+            if let access { try SimpleOneProtectedAccess.validate(access) }
+            guard session?.token == original.token, session?.user.id == user.id,
+                  session?.user.profile == original.user.profile else { return }
+            session = AppSession(token: original.token, user: user)
+            try? LumaWorkSessionKeychain.saveSession(session!)
+        } catch { /* Retain saved addresses; retry when the city or SimpleOne session changes. */ }
     }
 
     /// Merge against the latest server profile; never replace known account data from a workbook.
