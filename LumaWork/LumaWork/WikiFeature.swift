@@ -10,6 +10,7 @@ struct WikiSearchResponse: Decodable {
 }
 
 struct WikiHealthResponse: Decodable {
+    let updatedAt: String?
     let snapshotId: String?
     let contentVersion: String?
     let articles: Int?
@@ -47,6 +48,7 @@ struct WikiArticle: Codable, Hashable, Identifiable {
 }
 
 private struct WikiSearchSnapshot: Codable {
+    let catalogUpdatedAt: String?
     let query: String
     let snapshotID: String?
     let results: [WikiSearchResult]
@@ -208,6 +210,7 @@ final class WikiStore {
     var query = "инструкция"
     var results: [WikiSearchResult] = []
     var snapshotID: String?
+    var catalogUpdatedAt: String?
     var articleCount: Int?
     var isSearching = false
     var errorMessage: String?
@@ -226,12 +229,13 @@ final class WikiStore {
         ) {
             query = snapshot.value.query
             snapshotID = snapshot.value.snapshotID
+            catalogUpdatedAt = snapshot.value.catalogUpdatedAt
             results = snapshot.value.results
         }
     }
 
     func clearProtectedState() {
-        results = []; snapshotID = nil; articleCount = nil; errorMessage = nil; isSearching = false
+        results = []; snapshotID = nil; catalogUpdatedAt = nil; articleCount = nil; errorMessage = nil; isSearching = false
     }
 
     var searchTaskID: String {
@@ -239,20 +243,15 @@ final class WikiStore {
     }
 
     var catalogUpdateMessage: String {
-        guard let snapshotID,
-              snapshotID.range(of: #"^\d{8}T\d{6}Z$"#, options: .regularExpression) != nil else {
-            return "Дата обновления каталога неизвестна."
+        guard let catalogUpdatedAt else { return "Дата обновления каталога неизвестна." }
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = parser.date(from: catalogUpdatedAt)
+        if date == nil {
+            parser.formatOptions = [.withInternetDateTime]
+            date = parser.date(from: catalogUpdatedAt)
         }
-
-        let parser = DateFormatter()
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.calendar = Calendar(identifier: .gregorian)
-        parser.timeZone = TimeZone(secondsFromGMT: 0)
-        parser.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
-        guard let date = parser.date(from: snapshotID), parser.string(from: date) == snapshotID else {
-            return "Дата обновления каталога неизвестна."
-        }
-
+        guard let date else { return "Дата обновления каталога неизвестна." }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "ru_RU")
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -268,23 +267,13 @@ final class WikiStore {
         let currentVersion = health.snapshotId ?? health.contentVersion
         guard let currentVersion, !currentVersion.isEmpty else { return }
 
-        if let snapshotID, snapshotID != currentVersion {
-            results = []
-            AppOfflineSnapshotStore.save(
-                WikiSearchSnapshot(query: searchTaskID, snapshotID: currentVersion, results: []),
-                key: cacheKey
-            )
-        } else if snapshotID == nil {
-            AppOfflineSnapshotStore.save(
-                WikiSearchSnapshot(
-                    query: searchTaskID,
-                    snapshotID: currentVersion,
-                    results: results
-                ),
-                key: cacheKey
-            )
-        }
+        if let snapshotID, snapshotID != currentVersion { results = [] }
         snapshotID = currentVersion
+        catalogUpdatedAt = health.updatedAt
+        AppOfflineSnapshotStore.save(
+            WikiSearchSnapshot(catalogUpdatedAt: catalogUpdatedAt, query: searchTaskID, snapshotID: currentVersion, results: results),
+            key: cacheKey
+        )
     }
 
     func searchIfNeeded() async {
@@ -309,10 +298,12 @@ final class WikiStore {
             try await Task.sleep(nanoseconds: 350_000_000)
             let page = try await service.search(query: normalizedQuery)
             guard !Task.isCancelled, searchTaskID == normalizedQuery else { return }
+            if let version = page.snapshotID, version != snapshotID { catalogUpdatedAt = nil }
             snapshotID = page.snapshotID ?? snapshotID
             results = page.results
             AppOfflineSnapshotStore.save(
                 WikiSearchSnapshot(
+                    catalogUpdatedAt: catalogUpdatedAt,
                     query: normalizedQuery,
                     snapshotID: snapshotID,
                     results: page.results
