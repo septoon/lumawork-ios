@@ -11,6 +11,9 @@ private final class FixtureServer: @unchecked Sendable {
     var failID: String?
     var versions: [String: String] = [:]
     var pageCap: Int?
+    var filtersUpdates = false
+    var conditions: [String] = []
+    var requestedPageSizes: [Int] = []
 
     func response(_ request: URLRequest) throws -> (Data, Int) {
         lock.lock()
@@ -25,14 +28,25 @@ private final class FixtureServer: @unchecked Sendable {
             let page = Int(query.first { $0.name == "page" }?.value ?? "1")!
             let requestedPageSize = Int(query.first { $0.name == "per_page" }?.value ?? "20")!
             let perPage = min(requestedPageSize, pageCap ?? requestedPageSize)
-            let start = min((page - 1) * perPage, rows.count)
-            data = ["list": rows[start..<min(start + perPage, rows.count)].map { row in
+            let condition = query.first { $0.name == "condition" }?.value ?? ""
+            conditions.append(condition)
+            requestedPageSizes.append(requestedPageSize)
+            var matching = rows
+            if filtersUpdates, let range = condition.range(of: "sys_updated_at>="),
+               condition[range.upperBound...].count >= 19 {
+                let since = String(condition[range.upperBound...].prefix(19))
+                matching = rows.filter { row in
+                    (versions[row["sys_id"] as! String] ?? "2026-11-05 12:00:00") >= since
+                }
+            }
+            let start = min((page - 1) * perPage, matching.count)
+            data = ["list": matching[start..<min(start + perPage, matching.count)].map { row in
                 var row = row
                 if listVersion, query.first(where: { $0.name == "columns" })?.value?.contains("sys_updated_at") == true {
                     row["sys_updated_at"] = ["value": "2026-11-05 12:00:00"]
                 }
                 return row
-            }, "total": rows.count]
+            }, "total": matching.count]
         } else if path.contains("/record/") {
             data = rows.first { ($0["sys_id"] as? String) == request.url!.lastPathComponent }!
         } else if path.contains("/pb_sn_pos_install/") {
@@ -113,7 +127,15 @@ struct ClosedSyncTests {
             ("a cancelled screen waiter does not cancel the shared store sync", sharedTask),
             ("authorization revocation cannot publish old in-flight results", revokedAuthorization),
             ("an older XLSX import invalidates overwritten content versions", importedVersions),
-            ("a server page-size cap cannot truncate history", cappedPages)
+            ("a server page-size cap cannot truncate history", cappedPages),
+            ("historical polling resumes from the recent cursor instead of restarting the archive", seededWideCursor),
+            ("unchanged history is bounded on the server and reads no historical cells", serverDelta),
+            ("unknown rows with the same timestamp as the cursor are retained", equalTimestampDelta),
+            ("unchanged polling does not rewrite the archived rows", unchangedWrites),
+            ("a delta cursor never declares an incomplete historical baseline complete", deltaBaseline),
+            ("unseeded historical polling does not start an implicit backfill", unseededWide),
+            ("updates to old closed requests still arrive through historical deltas", oldRequestDelta),
+            ("an empty head is rechecked later without downloading history", emptyWideHead)
         ]
         for (name, test) in cases {
             do { try await test(); print("PASS: \(name)") }
@@ -257,6 +279,100 @@ struct ClosedSyncTests {
         try expect(batch.changes.count == 120, "Server-capped pages lost \(120 - batch.changes.count) history rows")
     }
 
+    @MainActor static func seededWideCursor() async throws {
+        let cursor = ClosedRequestsSyncCursor(updatedAt: "2026-11-05 18:05:11", sysID: "head")
+        let state = ClosedRequestsSyncState(userID: "user", narrowWatermark: cursor, wideWatermark: nil, lastNarrowSuccessAt: Date(), lastWideSuccessAt: nil, isWideBaselineTrusted: false, requiresNarrowFullReconciliation: false, recordsBySysID: [:])
+        let snapshot = ClosedRequestsSnapshot(fileName: "legacy", importedAt: Date(), records: [], syncState: state)
+        let context = SyncStoreHarness(snapshot: snapshot).beginClosedRequestsSync(userID: "user", scope: .wide)!
+        try expect(context.watermark == cursor, "Incomplete wide metadata restarted all historical requests")
+        var checked = snapshot
+        checked.syncState?.wideWatermark = cursor
+        checked.syncState?.lastWideSuccessAt = Date()
+        checked.syncState?.wideConditionRevision = ClosedRequestsArchiveQuery.revision
+        try expect(!SyncStoreHarness(snapshot: checked).shouldRunWideClosedRequestsSync(userID: "user"), "An untrusted historical baseline ignored the polling cooldown")
+    }
+
+    static func serverDelta() async throws {
+        let server = FixtureServer(); server.filtersUpdates = true
+        server.rows = (0..<1_000).map { fixture(String(format: "%04d", 9_999 - $0)) }
+        let cursor = ClosedRequestsSyncCursor(updatedAt: "2026-11-06 00:00:00", sysID: "head")
+        let batch = try await service(server).fetchClosedSyncChanges(userID: "user", authKey: "test", scope: .wide, since: cursor, knownVersionsBySysID: [:])
+        try expect(batch.changes.isEmpty, "Old rows were treated as new")
+        try expect(server.paths == ["/v1/list/itsm_request"], "Unchanged history still read \(server.paths.count) HTTP resources")
+        try expect(server.conditions.first?.contains("sys_updated_at>=2026-11-06 00:00:00") == true, "Server was asked to scan the entire archive")
+        try expect(!batch.establishesWideBaseline, "A bounded delta claimed to reconcile the entire archive")
+    }
+
+    static func equalTimestampDelta() async throws {
+        let server = FixtureServer(); server.filtersUpdates = true
+        server.rows = [fixture("z"), fixture("a")]
+        let cursor = ClosedRequestsSyncCursor(updatedAt: "2026-11-05 12:00:00", sysID: "z")
+        let batch = try await service(server).fetchClosedSyncChanges(userID: "user", authKey: "test", scope: .wide, since: cursor, knownVersionsBySysID: ["z": cursor.updatedAt])
+        try expect(batch.changes.map(\.sysID) == ["a"], "Inclusive timestamp boundary skipped an unknown same-second request")
+    }
+
+    @MainActor static func unchangedWrites() async throws {
+        let server = FixtureServer(); server.listVersion = true; server.rows = [fixture("one")]
+        let cursor = ClosedRequestsSyncCursor(updatedAt: "2026-11-05 12:00:00", sysID: "one")
+        let record = XLSXRequestsParser.record(fromExportRow: ["Номер заявки": "REQ-one", "Статус": "closed"])!
+        let state = ClosedRequestsSyncState(userID: "user", narrowWatermark: cursor, wideWatermark: nil, lastNarrowSuccessAt: Date(), lastWideSuccessAt: nil, isWideBaselineTrusted: false, requiresNarrowFullReconciliation: false, recordsBySysID: ["one": .init(requestNumber: "REQ-one", sysUpdatedAt: cursor.updatedAt, lastSeenAt: Date())])
+        let store = SyncStoreHarness(snapshot: ClosedRequestsSnapshot(fileName: "test", importedAt: Date(), records: [record], syncState: state))
+        SyncStoreHarness.persistedWrites = 0
+        let changes = try await store.synchronizeFromSimpleOne(SyncSimpleOneHarness(service: service(server)), scope: .narrow)
+        try expect(changes == 0 && store.recordsRevision == 0, "Unchanged archive rebuilt the visible rows")
+        try expect(SyncStoreHarness.persistedWrites == 0, "An unchanged poll rewrote the entire archive")
+    }
+
+    @MainActor static func deltaBaseline() async throws {
+        let cursor = ClosedRequestsSyncCursor(updatedAt: "2026-11-05 18:05:11", sysID: "head")
+        let state = ClosedRequestsSyncState(userID: "user", narrowWatermark: cursor, wideWatermark: nil, lastNarrowSuccessAt: Date(), lastWideSuccessAt: nil, isWideBaselineTrusted: false, requiresNarrowFullReconciliation: false, recordsBySysID: [:])
+        let initial = ClosedRequestsSnapshot(fileName: "test", importedAt: Date(), records: [], syncState: state)
+        let batch = SimpleOneClosedSyncBatch(userID: "user", scope: .wide, changes: [], watermark: cursor, totalCount: 0, establishesWideBaseline: false)
+        let updated = try SyncStoreHarness.apply(batch, to: initial)
+        try expect(updated.syncState?.wideWatermark == cursor, "The delta cursor was not committed")
+        try expect(updated.syncState?.isWideBaselineTrusted == false, "Delta tracking hid an incomplete historical baseline")
+    }
+
+    @MainActor static func unseededWide() async throws {
+        let server = FixtureServer(); server.filtersUpdates = true
+        server.rows = [fixture("z"), fixture("a")]
+        server.versions["a"] = "2025-01-01 00:00:00"
+        let state = ClosedRequestsSyncState(userID: "user", narrowWatermark: nil, wideWatermark: nil, lastNarrowSuccessAt: Date(), lastWideSuccessAt: nil, isWideBaselineTrusted: false, requiresNarrowFullReconciliation: false, recordsBySysID: [:])
+        let store = SyncStoreHarness(snapshot: ClosedRequestsSnapshot(fileName: "legacy", importedAt: Date(), records: [], syncState: state))
+        try expect(store.shouldRunWideClosedRequestsSync(userID: "user"), "Empty recent scope prevented the historical head probe")
+        let changed = try await store.synchronizeFromSimpleOne(SyncSimpleOneHarness(service: service(server)), scope: .wide)
+        try expect(changed == 1 && store.snapshot?.records.map(\.requestNumber) == ["REQ-z"], "Unseeded polling must fetch its head cohort but not backfill old history")
+        try expect(store.snapshot?.syncState?.wideWatermark?.sysID == "z", "Unseeded polling never established delta tracking")
+        try expect(store.snapshot?.syncState?.isWideBaselineTrusted == false, "A head probe falsely established a complete baseline")
+        for (condition, pageSize) in zip(server.conditions, server.requestedPageSizes) where !condition.contains("sys_updated_at>=") {
+            try expect(pageSize == 1, "Unseeded polling requested unbounded historical pages")
+        }
+        try expect(!store.isSynchronizingClosedRequests, "Head polling left the loader active")
+    }
+
+    static func oldRequestDelta() async throws {
+        let server = FixtureServer(); server.filtersUpdates = true
+        var old = fixture("old"); old["resolved_at"] = "2025-03-01 12:00:00"
+        server.rows = [old]; server.versions["old"] = "2026-11-06 00:00:00"
+        let cursor = ClosedRequestsSyncCursor(updatedAt: "2026-11-05 18:05:11", sysID: "head")
+        let batch = try await service(server).fetchClosedSyncChanges(userID: "user", authKey: "test", scope: .wide, since: cursor, knownVersionsBySysID: [:])
+        try expect(batch.changes.first?.record?.requestNumber == "REQ-old", "Historical deltas were incorrectly limited by the request's closure date")
+    }
+
+    @MainActor static func emptyWideHead() async throws {
+        let server = FixtureServer(); server.filtersUpdates = true
+        let simpleOne = SyncSimpleOneHarness(service: service(server))
+        let state = ClosedRequestsSyncState(userID: "user", narrowWatermark: nil, wideWatermark: nil, lastNarrowSuccessAt: Date(), lastWideSuccessAt: nil, isWideBaselineTrusted: false, requiresNarrowFullReconciliation: false, recordsBySysID: [:])
+        let store = SyncStoreHarness(snapshot: ClosedRequestsSnapshot(fileName: "legacy", importedAt: Date(), records: [], syncState: state))
+        let first = try await store.synchronizeFromSimpleOne(simpleOne, scope: .wide)
+        try expect(first == 0 && server.paths.count == 1, "An empty head triggered an archive scan")
+        try expect(!store.shouldRunWideClosedRequestsSync(userID: "user"), "An empty head ignored the polling cooldown")
+        try expect(store.shouldRunWideClosedRequestsSync(userID: "user", now: Date().addingTimeInterval(61)), "An empty head disabled future historical polling")
+        server.rows = [fixture("new-head")]
+        let later = try await store.synchronizeFromSimpleOne(simpleOne, scope: .wide)
+        try expect(later == 1 && store.snapshot?.records.first?.requestNumber == "REQ-new-head", "A later historical change stayed invisible")
+    }
+
     static func benchmarkArchive(_ path: String) throws {
         let original = try JSONDecoder().decode(ClosedRequestsSnapshot.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         let metadata = original.syncState?.recordsBySysID ?? [:]
@@ -281,6 +397,9 @@ struct ClosedSyncTests {
     var isAuthorized: Bool { browserAuthKey != nil }
     init(service: SimpleOneRequestsService) { self.service = service }
     func closedSyncUserID() async throws -> String { "user" }
+    func fetchClosedSyncHead(scope: ClosedRequestsSyncScope) async throws -> (userID: String, cursor: ClosedRequestsSyncCursor?) {
+        ("user", try await service.fetchClosedSyncHead(userID: "user", authKey: browserAuthKey ?? "", scope: scope))
+    }
     func fetchClosedSyncChanges(scope: ClosedRequestsSyncScope, since: ClosedRequestsSyncCursor?, knownVersionsBySysID: [String: String], onProgress: @escaping @Sendable (SimpleOneClosedSyncProgress) async throws -> Void) async throws -> SimpleOneClosedSyncBatch {
         try await service.fetchClosedSyncChanges(userID: "user", authKey: browserAuthKey ?? "", scope: scope, since: since, knownVersionsBySysID: knownVersionsBySysID, onProgress: onProgress)
     }

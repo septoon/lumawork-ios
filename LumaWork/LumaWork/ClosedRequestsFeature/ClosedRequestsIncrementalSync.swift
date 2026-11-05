@@ -34,6 +34,7 @@ nonisolated struct SimpleOneClosedSyncBatch: Hashable, Sendable {
     var watermark: ClosedRequestsSyncCursor?
     var totalCount: Int?
     var isComplete = true
+    var establishesWideBaseline = true
 }
 
 nonisolated struct SimpleOneClosedSyncProgress: Sendable {
@@ -84,6 +85,9 @@ nonisolated extension SimpleOneRequestsService {
         var latestTotalCount: Int?
         var latestWatermark = watermark
         var scanKnownVersions = knownVersionsBySysID
+        if let watermark, Self.closedSyncCanonicalVersion(watermark.updatedAt) == nil {
+            throw SimpleOneServiceError.invalidResponse
+        }
 
         for _ in 0 ..< 3 {
             let scan = try await scanClosedSyncChanges(
@@ -114,7 +118,8 @@ nonisolated extension SimpleOneRequestsService {
                     scope: scope,
                     changes: sortedClosedSyncChanges(changesBySysID.values),
                     watermark: latestWatermark,
-                    totalCount: latestTotalCount
+                    totalCount: latestTotalCount,
+                    establishesWideBaseline: watermark == nil
                 )
             }
 
@@ -129,7 +134,8 @@ nonisolated extension SimpleOneRequestsService {
                     scope: scope,
                     changes: sortedClosedSyncChanges(changesBySysID.values),
                     watermark: latestWatermark,
-                    totalCount: latestTotalCount
+                    totalCount: latestTotalCount,
+                    establishesWideBaseline: watermark == nil
                 )
             }
         }
@@ -169,7 +175,8 @@ nonisolated extension SimpleOneRequestsService {
                 authKey: authKey,
                 scope: scope,
                 page: pageNumber,
-                perPage: perPage
+                perPage: perPage,
+                since: watermark
             )
             totalCount = page.totalCount ?? totalCount
             var reachedWatermark = false
@@ -255,7 +262,8 @@ nonisolated extension SimpleOneRequestsService {
         authKey: String,
         scope: ClosedRequestsSyncScope,
         page: Int,
-        perPage: Int
+        perPage: Int,
+        since watermark: ClosedRequestsSyncCursor? = nil
     ) async throws -> SimpleOneClosedSyncPage {
         let baseCondition: String
         switch scope {
@@ -264,7 +272,10 @@ nonisolated extension SimpleOneRequestsService {
         case .wide:
             baseCondition = closedSimpleOneCondition(userID: userID)
         }
-        let condition = "\(baseCondition)^ORDERBYDESCsys_updated_at^ORDERBYDESCsys_id"
+        // Keep the whole same-second cohort: a newly assigned row can have a
+        // smaller sys_id than the saved head. Known versions deduplicate it.
+        let incrementalCondition = watermark.map { "(\(baseCondition))^sys_updated_at>=\($0.updatedAt)" } ?? baseCondition
+        let condition = "\(incrementalCondition)^ORDERBYDESCsys_updated_at^ORDERBYDESCsys_id"
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent("list/itsm_request"),
             resolvingAgainstBaseURL: false

@@ -222,13 +222,11 @@ final class ClosedRequestsStore {
             }
             return ClosedRequestsSyncCursor(updatedAt: metadata.sysUpdatedAt, sysID: sysID)
         } ?? []
-        let requiresWideRestart = scope == .wide
-            && ClosedRequestsArchiveQuery.requiresWideRestart(
-                storedRevision: state?.wideConditionRevision
-            )
         let watermark: ClosedRequestsSyncCursor?
-        if requiresWideRestart {
-            watermark = nil
+        if scope == .wide, state?.userID == userID {
+            // Historical backfill is an explicit XLSX action. Normal refreshes
+            // track changes after the already reconciled recent-request head.
+            watermark = state?.wideWatermark ?? state?.narrowWatermark
         } else if scope == .narrow, state?.requiresNarrowFullReconciliation == true {
             watermark = nil
         } else if let recoveryWatermark = unclassifiedMissingRecords.min() {
@@ -324,7 +322,8 @@ final class ClosedRequestsStore {
         closedSyncProgressText = scope == .narrow ? "Проверяю последние закрытые заявки…" : "Проверяю историю закрытых заявок…"
         let startedAt = Date()
         let logger = Logger(subsystem: "LumaWork", category: "ClosedRequestsSync")
-        logger.info("Started scope=\(scope.rawValue, privacy: .public), knownVersions=\(context.knownVersionsBySysID.count)")
+        let startingPoint = context.watermark?.updatedAt ?? (scope == .wide ? "head-probe" : "full")
+        logger.info("Started scope=\(scope.rawValue, privacy: .public), since=\(startingPoint, privacy: .public), knownVersions=\(context.knownVersionsBySysID.count)")
         let task = Task { @MainActor [weak self] () throws -> Int in
             guard let self else { throw CancellationError() }
 #if canImport(UIKit)
@@ -349,8 +348,23 @@ final class ClosedRequestsStore {
                 }
             }
             do {
+                var watermark = context.watermark
+                if scope == .wide, watermark == nil {
+                    let head = try await simpleOneStore.fetchClosedSyncHead(scope: .wide)
+                    try Task.checkCancellation()
+                    guard head.userID == userID, simpleOneStore.isAuthorized,
+                          simpleOneStore.browserAuthKey == authKey, closedSyncTaskToken == token else { throw CancellationError() }
+                    guard let cursor = head.cursor else {
+                        // Keep checking for future historical changes even if the
+                        // recent period and the first wide probe are both empty.
+                        if snapshot?.syncState?.userID == userID { snapshot?.syncState?.lastWideSuccessAt = Date() }
+                        logger.info("Completed scope=wide, changes=0, emptyHead=true")
+                        return 0
+                    }
+                    watermark = cursor
+                }
                 let batch = try await simpleOneStore.fetchClosedSyncChanges(
-                    scope: scope, since: context.watermark,
+                    scope: scope, since: watermark,
                     knownVersionsBySysID: context.knownVersionsBySysID,
                     onProgress: { [weak self] progress in
                         try await self?.receiveClosedSyncProgress(
@@ -390,6 +404,8 @@ final class ClosedRequestsStore {
         let title = scope == .narrow ? "Последние заявки" : "История"
         let total = progress.totalCount.map { " из \($0)" } ?? ""
         closedSyncProgressText = "\(title): проверено \(progress.scannedCount)\(total)"
+        Logger(subsystem: "LumaWork", category: "ClosedRequestsSync")
+            .info("Checked scope=\(scope.rawValue, privacy: .public), rows=\(progress.scannedCount), total=\(progress.totalCount ?? -1), changes=\(progress.changes.count)")
         closedSyncPendingChanges.append(contentsOf: progress.changes)
         if closedSyncCheckpointAt == nil || Date().timeIntervalSince(closedSyncCheckpointAt!) >= 3 {
             try await flushClosedSyncCheckpoint(userID: userID, scope: scope, generation: generation)
@@ -437,6 +453,30 @@ final class ClosedRequestsStore {
               isSynchronizingClosedRequests,
               let existingSnapshot = snapshot else {
             return false
+        }
+
+        if batch.isComplete, batch.changes.isEmpty,
+           var state = existingSnapshot.syncState, state.userID == batch.userID {
+            let cursorUnchanged: Bool
+            switch batch.scope {
+            case .narrow:
+                cursorUnchanged = !state.requiresNarrowFullReconciliation && batch.watermark == state.narrowWatermark
+                if cursorUnchanged { state.lastNarrowSuccessAt = Date() }
+            case .wide:
+                cursorUnchanged = batch.watermark == state.wideWatermark
+                    && state.wideConditionRevision == ClosedRequestsArchiveQuery.revision
+                    && (state.isWideBaselineTrusted || !batch.establishesWideBaseline)
+                if cursorUnchanged { state.lastWideSuccessAt = Date() }
+            }
+            if cursorUnchanged {
+                // Only the in-memory polling cooldown changed. Do not traverse,
+                // re-encode or rewrite thousands of unchanged archived rows.
+                snapshot?.syncState = state
+                isSynchronizingClosedRequests = false
+                Logger(subsystem: "LumaWork", category: "ClosedRequestsSync")
+                    .info("Unchanged scope=\(batch.scope.rawValue, privacy: .public), archiveWrite=skipped")
+                return true
+            }
         }
 
         do {
@@ -503,14 +543,8 @@ final class ClosedRequestsStore {
 
     func shouldRunWideClosedRequestsSync(userID: String, now: Date = Date()) -> Bool {
         guard let state = snapshot?.syncState,
-              state.userID == userID,
-              state.isWideBaselineTrusted else {
-            return true
-        }
-        if ClosedRequestsArchiveQuery.requiresWideRestart(
-            storedRevision: state.wideConditionRevision
-        ) {
-            return true
+              state.userID == userID else {
+            return false
         }
         guard let lastSuccess = state.lastWideSuccessAt else { return true }
         return now.timeIntervalSince(lastSuccess) >= 60
@@ -656,9 +690,10 @@ final class ClosedRequestsStore {
                 state.requiresNarrowFullReconciliation = false
             case .wide:
                 state.wideWatermark = batch.watermark ?? state.wideWatermark
+                state.isWideBaselineTrusted = batch.establishesWideBaseline
+                    || (state.wideConditionRevision == ClosedRequestsArchiveQuery.revision && state.isWideBaselineTrusted)
                 state.wideConditionRevision = ClosedRequestsArchiveQuery.revision
                 state.lastWideSuccessAt = now
-                state.isWideBaselineTrusted = true
             }
         }
 
