@@ -11,6 +11,8 @@ final class ClosedRequestsStore {
     private let legacyStorageKey = "closed-requests-snapshot"
     private let merchantTINRepairStorageKey = "closed-requests-merchant-tin-repair-v2"
 
+    @ObservationIgnored var workStatistics: WorkStatisticsSyncCoordinator?
+    private var isRefreshingVerifiedArchive = false
     var snapshot: ClosedRequestsSnapshot?
     var isImporting = false
     var isLoadingSnapshot = false
@@ -279,8 +281,10 @@ final class ClosedRequestsStore {
     func synchronizeFromSimpleOne(
         _ simpleOneStore: SimpleOneRequestsStore,
         scope: ClosedRequestsSyncScope,
-        waitsForCurrentSync: Bool = false
+        waitsForCurrentSync: Bool = false,
+        isVerifiedRefresh: Bool = false
     ) async throws -> Int {
+        guard !isRefreshingVerifiedArchive || isVerifiedRefresh else { return 0 }
         guard let authKey = simpleOneStore.browserAuthKey, simpleOneStore.isAuthorized else {
             throw SimpleOneServiceError.missingCredentials
         }
@@ -297,7 +301,7 @@ final class ClosedRequestsStore {
             } else {
                 guard waitsForCurrentSync else { return 0 }
                 _ = try await existing.value
-                return try await synchronizeFromSimpleOne(simpleOneStore, scope: scope, waitsForCurrentSync: true)
+                return try await synchronizeFromSimpleOne(simpleOneStore, scope: scope, waitsForCurrentSync: true, isVerifiedRefresh: isVerifiedRefresh)
             }
         }
         if waitsForCurrentSync { try await waitForClosedRequestsSyncAvailability() }
@@ -305,9 +309,10 @@ final class ClosedRequestsStore {
         let userID = try await simpleOneStore.closedSyncUserID()
         // Another caller can have started a task while user lookup was suspended.
         if closedSyncTask != nil {
-            return try await synchronizeFromSimpleOne(simpleOneStore, scope: scope, waitsForCurrentSync: waitsForCurrentSync)
+            return try await synchronizeFromSimpleOne(simpleOneStore, scope: scope, waitsForCurrentSync: waitsForCurrentSync, isVerifiedRefresh: isVerifiedRefresh)
         }
         guard simpleOneStore.isAuthorized, simpleOneStore.browserAuthKey == authKey else { throw CancellationError() }
+        guard !isRefreshingVerifiedArchive || isVerifiedRefresh else { return 0 }
         guard let context = beginClosedRequestsSync(userID: userID, scope: scope) else {
             if waitsForCurrentSync { throw SimpleOneServiceError.server("Не удалось начать обновление закрытых заявок. Повторите попытку.") }
             return 0
@@ -337,6 +342,7 @@ final class ClosedRequestsStore {
             }
 #endif
             defer {
+                workStatistics?.endRefresh()
                 finishClosedRequestsSync(generation: context.generation)
                 if closedSyncTaskToken == token {
                     closedSyncTask = nil
@@ -348,6 +354,11 @@ final class ClosedRequestsStore {
                 }
             }
             do {
+                await workStatistics?.beginRefresh(sourceUserID: userID)
+                try Task.checkCancellation()
+                guard simpleOneStore.isAuthorized, simpleOneStore.browserAuthKey == authKey,
+                      closedSyncTaskToken == token, closedSyncGeneration == context.generation else { throw CancellationError() }
+                try workStatistics?.markSourcePassDirty()
                 var watermark = context.watermark
                 if scope == .wide, watermark == nil {
                     let head = try await simpleOneStore.fetchClosedSyncHead(scope: .wide)
@@ -358,6 +369,7 @@ final class ClosedRequestsStore {
                         // Keep checking for future historical changes even if the
                         // recent period and the first wide probe are both empty.
                         if snapshot?.syncState?.userID == userID { snapshot?.syncState?.lastWideSuccessAt = Date() }
+                        await workStatistics?.commitBatch(SimpleOneClosedSyncBatch(userID: userID, scope: .wide, changes: [], watermark: nil, totalCount: 0))
                         logger.info("Completed scope=wide, changes=0, emptyHead=true")
                         return 0
                     }
@@ -378,6 +390,7 @@ final class ClosedRequestsStore {
                       closedSyncTaskToken == token else { throw CancellationError() }
                 let applied = await applyClosedRequestsSyncBatch(batch, generation: context.generation)
                 guard applied else { throw SimpleOneServiceError.server(errorMessage ?? "Не удалось сохранить закрытые заявки.") }
+                await workStatistics?.commitBatch(batch)
                 logger.info("Completed scope=\(scope.rawValue, privacy: .public), changes=\(batch.changes.count), durationMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
                 return batch.changes.lazy.compactMap(\.record).count
             } catch {
@@ -511,6 +524,52 @@ final class ClosedRequestsStore {
         }
     }
 
+    /// Shared by Requests and Home; never called when opening Analytics.
+    func refreshVerifiedClosedArchive(_ simpleOneStore: SimpleOneRequestsStore, forceBaseline: Bool = false) async throws {
+        guard !isRefreshingVerifiedArchive else { return }
+        errorMessage = nil; notice = nil
+        isRefreshingVerifiedArchive = true
+        defer { isRefreshingVerifiedArchive = false; workStatistics?.endRefresh() }
+        try await waitForClosedRequestsSyncAvailability()
+        let access = try SimpleOneProtectedAccess.capture()
+        let userID = try await simpleOneStore.closedSyncUserID()
+        try SimpleOneProtectedAccess.validate(access)
+        workStatistics?.synchronizeAccess(sourceUserID: userID)
+        if forceBaseline || snapshot == nil || needsMerchantTINRepair || snapshot?.syncState?.isWideBaselineTrusted != true || workStatistics?.requiresAuthoritativeBaseline == true {
+            await workStatistics?.beginRefresh(sourceUserID: userID)
+            try SimpleOneProtectedAccess.validate(access)
+            let narrow = try await simpleOneStore.fetchClosedSyncHead(scope: .narrow)
+            let wide = try await simpleOneStore.fetchClosedSyncHead(scope: .wide)
+            guard narrow.userID == userID, wide.userID == userID else { throw CancellationError() }
+            try SimpleOneProtectedAccess.validate(access)
+            try workStatistics?.markSourcePassDirty()
+            let file = try await simpleOneStore.exportClosedRequestsXLSXForCurrentUser()
+            try SimpleOneProtectedAccess.validate(access)
+            let existing = snapshot
+            let generation = closedSyncGeneration
+            isImporting = true
+            defer { isImporting = false }
+            let prepared = try await Task.detached(priority: .utility) {
+                let parsed = try XLSXRequestsParser.parse(data: file.data, fileName: file.fileName)
+                let merged = Self.mergeSnapshot(existing: existing, incoming: parsed)
+                return (parsed.records, merged.snapshot, try JSONEncoder().encode(merged.snapshot))
+            }.value
+            try SimpleOneProtectedAccess.validate(access)
+            guard generation == closedSyncGeneration else { throw CancellationError() }
+            try Self.saveSnapshotDataToDisk(prepared.2)
+            snapshot = prepared.1; recordsRevision &+= 1
+            await setClosedRequestsSyncBaseline(userID: userID, narrow: narrow.cursor, wide: wide.cursor)
+            try SimpleOneProtectedAccess.validate(access)
+            guard errorMessage == nil else { throw SimpleOneServiceError.server(errorMessage!) }
+            await workStatistics?.commitBaseline(records: prepared.0, narrow: narrow.cursor, wide: wide.cursor)
+            markMerchantTINRepairCompleted()
+        } else {
+            _ = try await synchronizeFromSimpleOne(simpleOneStore, scope: .narrow, waitsForCurrentSync: true, isVerifiedRefresh: true)
+            _ = try await synchronizeFromSimpleOne(simpleOneStore, scope: .wide, waitsForCurrentSync: true, isVerifiedRefresh: true)
+        }
+        if let notice = workStatistics?.notice { self.notice = notice }
+    }
+
     func setClosedRequestsSyncBaseline(
         userID: String,
         narrow: ClosedRequestsSyncCursor?,
@@ -531,10 +590,13 @@ final class ClosedRequestsStore {
                 ? snapshot.syncState?.recordsBySysID ?? [:]
                 : [:]
         )
+        let generation = closedSyncGeneration
         do {
-            try await Task.detached(priority: .utility) {
-                try Self.saveSnapshotToDisk(snapshot)
+            let data = try await Task.detached(priority: .utility) {
+                try JSONEncoder().encode(snapshot)
             }.value
+            guard generation == closedSyncGeneration else { return }
+            try Self.saveSnapshotDataToDisk(data)
             self.snapshot = snapshot
         } catch {
             errorMessage = appUserFacingErrorMessage(error)

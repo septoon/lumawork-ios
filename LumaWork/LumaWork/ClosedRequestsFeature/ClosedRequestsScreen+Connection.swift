@@ -174,26 +174,17 @@ extension ClosedRequestsScreen {
         await refreshClosedRequestsIncrementally(includesFullHistory: true)
 
         if store.errorMessage == nil {
-            store.notice = "Активные и закрытые заявки обновлены."
+            store.notice = store.workStatistics?.notice ?? "Активные и закрытые заявки обновлены."
         }
     }
 
     func refreshClosedRequestsIncrementally(includesFullHistory: Bool = false) async {
         store.errorMessage = nil
         store.notice = nil
-        if store.snapshot == nil || store.needsMerchantTINRepair {
-            await refreshClosedRequestsArchiveFromSimpleOne()
-            return
-        }
-
-        _ = await synchronizeClosedRequestsAutomatically(
-            scope: .narrow,
-            waitsForCurrentSync: true,
-            reportsErrors: true
-        )
-        if includesFullHistory, store.errorMessage == nil, !Task.isCancelled {
-            _ = await synchronizeClosedRequestsAutomatically(scope: .wide, waitsForCurrentSync: true, reportsErrors: true)
-        }
+        do {
+            try await store.refreshVerifiedClosedArchive(simpleOneStore)
+        } catch is CancellationError { return }
+        catch { store.errorMessage = appUserFacingErrorMessage(error) }
     }
 
     func refreshClosedRequestsArchiveFromSimpleOne() async {
@@ -215,38 +206,8 @@ extension ClosedRequestsScreen {
         }
 
         do {
-            let narrowHead = try? await simpleOneStore.fetchClosedSyncHead(scope: .narrow)
-            let wideHead = try? await simpleOneStore.fetchClosedSyncHead(scope: .wide)
-            closedArchiveProgressFraction = 0.22
-            closedArchiveProgressText = "Жду готовый XLSX в SimpleOne."
-            let exportedFile = try await simpleOneStore.exportClosedRequestsXLSXForCurrentUser()
-            closedArchiveProgressFraction = 0.68
-            closedArchiveProgressText = "Скачал XLSX. Разбираю таблицу."
-            await store.importSpreadsheet(
-                data: exportedFile.data,
-                fileName: exportedFile.fileName
-            )
-            let baselineUserID = narrowHead?.userID ?? wideHead?.userID
-            let baselineUsersMatch = narrowHead == nil
-                || wideHead == nil
-                || narrowHead?.userID == wideHead?.userID
-            if let baselineUserID, baselineUsersMatch, store.errorMessage == nil {
-                await store.setClosedRequestsSyncBaseline(
-                    userID: baselineUserID,
-                    narrow: narrowHead?.cursor,
-                    wide: wideHead?.cursor
-                )
-            }
-            if store.errorMessage == nil {
-                store.markMerchantTINRepairCompleted()
-            }
-            closedArchiveProgressFraction = 0.95
-            closedArchiveProgressText = "Сохраняю локальный архив."
-            if store.errorMessage == nil {
-                closedArchiveProgressFraction = 1
-                closedArchiveProgressText = "Готово."
-                requestsMode = .closed
-            }
+            try await store.refreshVerifiedClosedArchive(simpleOneStore, forceBaseline: true)
+            closedArchiveProgressFraction = 1
         } catch {
             store.notice = nil
             store.errorMessage = appUserFacingErrorMessage(error)

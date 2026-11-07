@@ -4,6 +4,7 @@ import SwiftUI
 struct ClosedRequestsAnalyticsContent: View {
     let snapshot: ClosedRequestsSnapshot?
     let records: [ClosedRequestRecord]
+    let showsNavigationHeader: Bool
     let showsCloseButton: Bool
 
     @Environment(\.dismiss) private var dismiss
@@ -19,11 +20,13 @@ struct ClosedRequestsAnalyticsContent: View {
     init(
         snapshot: ClosedRequestsSnapshot?,
         records: [ClosedRequestRecord],
-        showsCloseButton: Bool = true
+        showsCloseButton: Bool = true,
+        showsNavigationHeader: Bool = true
     ) {
         self.snapshot = snapshot
         self.records = records
         self.showsCloseButton = showsCloseButton
+        self.showsNavigationHeader = showsNavigationHeader
         _analytics = State(initialValue: ClosedRequestsAnalyticsData(records: records))
     }
 
@@ -38,7 +41,7 @@ struct ClosedRequestsAnalyticsContent: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .navigationTitle("Аналитика")
+        .navigationTitle(showsNavigationHeader ? "Аналитика" : "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if showsCloseButton {

@@ -74,7 +74,9 @@ struct AppRootView: View {
     var body: some View {
         Group {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-equipment-photo-ui-preview") {
+            if ProcessInfo.processInfo.arguments.contains("-leaderboard-access-ui-preview") || ProcessInfo.processInfo.arguments.contains("-leaderboard-disabled-ui-preview") || ProcessInfo.processInfo.arguments.contains("-leaderboard-user-rules-ui-preview") {
+                LeaderboardAccessVisualPreview()
+            } else if ProcessInfo.processInfo.arguments.contains("-equipment-photo-ui-preview") {
                 OfficeEquipmentPhotoDebugView()
             } else if ProcessInfo.processInfo.arguments.contains("-admin-images-ui-preview") {
                 NavigationStack {
@@ -129,6 +131,9 @@ struct AppRootView: View {
             } else {
                 WidgetSnapshotPublisher.publishSignedOut()
                 EngineerVoiceRequestIndex.invalidateSuggestions()
+                dataStores?.workStatistics.clearProtectedState()
+                dataStores?.leaderboardStore.clearProtectedState()
+                dataStores?.leaderboardAccess.clearProtectedState()
                 dataStores = nil
             }
         }

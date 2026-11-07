@@ -500,6 +500,7 @@ nonisolated struct ClosedRequestRecord: Codable, Hashable, Identifiable, Sendabl
     var dismantledEquipmentSerialNumber: String? = nil
     var engineerComment: String
     var closedAt: String
+    var workStatisticsDate: String? = nil
     var deadline: String? = nil
     var completedAt: String? = nil
     var closedInMulticardAt: String? = nil

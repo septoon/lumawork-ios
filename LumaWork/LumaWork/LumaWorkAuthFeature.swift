@@ -31,6 +31,8 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
     case deleteImages = "images.delete"
     case viewFeedback = "feedback.view"
     case manageFeedback = "feedback.manage"
+    case viewAppAccess = "appAccess.view"
+    case manageAppAccess = "appAccess.manage"
     case viewAssistant = "assistant.view"
     case manageAssistant = "assistant.manage"
     case viewSite = "site.view"
@@ -62,6 +64,8 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
         case .deleteImages: "Удаление изображений"
         case .viewFeedback: "Просмотр обратной связи"
         case .manageFeedback: "Обработка обратной связи"
+        case .viewAppAccess: "Просмотр доступа к приложению"
+        case .manageAppAccess: "Управление доступом к приложению"
         case .viewAssistant: "Статистика ИИ"
         case .manageAssistant: "Настройки и лимиты ИИ"
         case .viewSite: "Просмотр сайта"
@@ -93,6 +97,8 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
         case .deleteImages: "Удаление файлов с проверкой связей"
         case .viewFeedback: "Сообщения пользователей, снимки и данные устройства"
         case .manageFeedback: "Статусы, приоритеты, заметки и повтор отправки письма"
+        case .viewAppAccess: "Настройки видимости рейтинга"
+        case .manageAppAccess: "Рейтинг для всех, платформ и отдельных пользователей"
         case .viewAssistant: "Расходы, токены, модели и статистика пользователей"
         case .manageAssistant: "Системный промпт, словарь и ограничения пользователей"
         case .viewSite: "Состояние, тексты и галерея app.lumastack.ru"
@@ -110,6 +116,7 @@ enum AdminPermission: String, CaseIterable, Codable, Hashable, Identifiable {
         case .viewUsers, .notifyUsers, .editUsers, .revokeUserSessions, .sendUserReports, .blockUsers, .manageUserPermissions, .deleteUsers: .users
         case .viewImages, .createImages, .editImages, .deleteImages: .images
         case .viewFeedback, .manageFeedback: .feedback
+        case .viewAppAccess, .manageAppAccess: .appAccess
         case .viewAssistant, .manageAssistant: .assistant
         case .viewSite, .manageSite: .site
         case .viewEngineerFiles, .manageEngineerFiles: .engineerFiles
@@ -124,6 +131,7 @@ enum AdminPermissionGroup: String, CaseIterable, Identifiable {
     case images
     case feedback
     case assistant
+    case appAccess
     case site
     case engineerFiles
     case evotorDrivers
@@ -135,6 +143,7 @@ enum AdminPermissionGroup: String, CaseIterable, Identifiable {
         case .users: "Пользователи"
         case .images: "Изображения"
         case .feedback: "Обратная связь"
+        case .appAccess: "Доступ к приложению"
         case .assistant: "ИИ-помощник"
         case .site: "Сайт"
         case .engineerFiles: "Файлы Инженера"

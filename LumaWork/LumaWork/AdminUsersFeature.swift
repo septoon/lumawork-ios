@@ -517,6 +517,7 @@ struct AdminUsersScreen: View {
             || can(.viewFeedback)
             || can(.viewGsmTemplate)
             || can(.viewAssistant)
+            || can(.viewAppAccess)
             || can(.viewSite)
             || can(.viewEngineerFiles)
             || can(.viewEvotorDrivers)
@@ -598,8 +599,15 @@ struct AdminUsersScreen: View {
                 }
             }
 
-            if can(.viewUsers) || can(.viewFeedback) || can(.viewImages) || can(.viewSite) || can(.viewEvotorDrivers) {
+            if can(.viewUsers) || can(.viewFeedback) || can(.viewImages) || can(.viewSite) || can(.viewAppAccess) || can(.viewEvotorDrivers) {
                 Section("Управление") {
+                    if can(.viewAppAccess) {
+                        NavigationLink {
+                            AdminLeaderboardAccessScreen(token: token, canManage: can(.manageAppAccess))
+                        } label: {
+                            AdminNavigationRow(title: "Рейтинг пользователей", subtitle: "Видимость для всех, платформ и пользователей", systemImage: "medal", tint: AppTheme.primaryTint)
+                        }
+                    }
                     if can(.viewEvotorDrivers) {
                         NavigationLink {
                             AdminEvotorDriversScreen(canManage: can(.manageEvotorDrivers))

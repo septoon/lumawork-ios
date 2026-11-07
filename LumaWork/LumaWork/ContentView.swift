@@ -118,13 +118,18 @@ struct ContentView: View {
             normalizeSelectedSection()
         }
         .onChange(of: sessionStore.authToken) { _, _ in
+            stores.synchronizeProtectedAccess()
             isAdminUnlocked = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .leaderboardAccessChanged)) { _ in
+            Task { await stores.leaderboardAccess.refresh() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .simpleOneSessionChanged)) { _ in
             stores.synchronizeProtectedAccess()
         }
         .task {
             stores.synchronizeProtectedAccess()
+            await stores.leaderboardAccess.refresh()
             normalizeSelectedSection()
         }
         .task(id: navigationRouter.pendingRoute) {
@@ -170,9 +175,18 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
+                if let userID = stores.simpleOneStore.currentUser?.sysID {
+                    stores.workStatistics.resumePending(sourceUserID: userID)
+                }
+                Task { await stores.leaderboardAccess.refresh() }
+                stores.leaderboardStore.resumeIfVisible()
                 stores.groupClosedRequestsStore.resumeIfNeeded(
                     simpleOneStore: stores.simpleOneStore, region: CoordinationRegion(profileCity: sessionStore.userProfile.city)
                 )
+            }
+            if newPhase != .active {
+                stores.leaderboardAccess.pauseForBackground()
+                stores.leaderboardStore.pauseForBackground()
             }
             guard newPhase == .background else { return }
             isAdminUnlocked = false
@@ -282,6 +296,9 @@ struct ContentView: View {
             ClosedRequestsAnalyticsScreen(
                 snapshot: stores.closedRequestsStore.snapshot,
                 records: stores.closedRequestsStore.records,
+                leaderboardStore: stores.leaderboardStore,
+                leaderboardAccess: stores.leaderboardAccess,
+                sourceUserID: stores.simpleOneStore.currentUser?.sysID ?? "",
                 showsCloseButton: false
             )
         case .users:

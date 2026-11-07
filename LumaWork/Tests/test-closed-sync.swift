@@ -135,7 +135,8 @@ struct ClosedSyncTests {
             ("a delta cursor never declares an incomplete historical baseline complete", deltaBaseline),
             ("unseeded historical polling does not start an implicit backfill", unseededWide),
             ("updates to old closed requests still arrive through historical deltas", oldRequestDelta),
-            ("an empty head is rechecked later without downloading history", emptyWideHead)
+            ("an empty head is rechecked later without downloading history", emptyWideHead),
+            ("automatic store sync runs preflight before dirty and closes publication lifecycle", publishingLifecycle)
         ]
         for (name, test) in cases {
             do { try await test(); print("PASS: \(name)") }
@@ -373,6 +374,22 @@ struct ClosedSyncTests {
         try expect(later == 1 && store.snapshot?.records.first?.requestNumber == "REQ-new-head", "A later historical change stayed invisible")
     }
 
+    @MainActor static func publishingLifecycle() async throws {
+        let server = FixtureServer(); server.filtersUpdates = true
+        let simpleOne = SyncSimpleOneHarness(service: service(server))
+        let state = ClosedRequestsSyncState(userID: "user", narrowWatermark: nil, wideWatermark: nil, lastNarrowSuccessAt: Date(), lastWideSuccessAt: nil, isWideBaselineTrusted: false, requiresNarrowFullReconciliation: false, recordsBySysID: [:])
+        let store = SyncStoreHarness(snapshot: ClosedRequestsSnapshot(fileName: "fixture", importedAt: Date(), records: [], syncState: state))
+        let publisher = WorkStatisticsSyncCoordinator(); store.workStatistics = publisher
+        _ = try await store.synchronizeFromSimpleOne(simpleOne, scope: .wide)
+        try expect(publisher.events == ["preflight", "dirty", "commit", "end"], "Automatic loop bypassed preflight or left a source pass active: \(publisher.events)")
+        publisher.events = []
+        let previousRequests = server.paths.count
+        simpleOne.onUserLookup = { store.setVerifiedRefreshForTest(true) }
+        let raced = try await store.synchronizeFromSimpleOne(simpleOne, scope: .narrow)
+        try expect(raced == 0 && publisher.events.isEmpty && server.paths.count == previousRequests, "An automatic sync resumed into an explicit baseline after user lookup")
+        store.setVerifiedRefreshForTest(false)
+    }
+
     static func benchmarkArchive(_ path: String) throws {
         let original = try JSONDecoder().decode(ClosedRequestsSnapshot.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
         let metadata = original.syncState?.recordsBySysID ?? [:]
@@ -396,7 +413,8 @@ struct ClosedSyncTests {
     var browserAuthKey: String? = "test"
     var isAuthorized: Bool { browserAuthKey != nil }
     init(service: SimpleOneRequestsService) { self.service = service }
-    func closedSyncUserID() async throws -> String { "user" }
+    var onUserLookup: (() -> Void)?
+    func closedSyncUserID() async throws -> String { onUserLookup?(); return "user" }
     func fetchClosedSyncHead(scope: ClosedRequestsSyncScope) async throws -> (userID: String, cursor: ClosedRequestsSyncCursor?) {
         ("user", try await service.fetchClosedSyncHead(userID: "user", authKey: browserAuthKey ?? "", scope: scope))
     }

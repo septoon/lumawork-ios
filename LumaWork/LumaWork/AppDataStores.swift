@@ -10,6 +10,9 @@ final class AppDataStores {
     let vehicleStore: VehicleStore
     let salaryStore: SalaryStore
     let fuelStore: FuelStore
+    let workStatistics: WorkStatisticsSyncCoordinator
+    let leaderboardAccess: LeaderboardAccessStore
+    let leaderboardStore: LeaderboardStore
     let closedRequestsStore: ClosedRequestsStore
     let simpleOneStore: SimpleOneRequestsStore
     let clientPersonalCommentsStore: ClientPersonalCommentsStore
@@ -65,7 +68,16 @@ final class AppDataStores {
             importAPI: FuelImportAPI(config: config, authToken: authToken),
             cacheID: userID
         )
+        let workStatistics = WorkStatisticsSyncCoordinator(config: config, ownerID: userID)
+        self.workStatistics = workStatistics
+        let leaderboardStore = LeaderboardStore(config: config, ownerID: userID)
+        self.leaderboardStore = leaderboardStore
+        let leaderboardAccess = LeaderboardAccessStore(config: config, ownerID: userID)
+        self.leaderboardAccess = leaderboardAccess
+        leaderboardAccess.onDisabled = { [weak leaderboardStore] in leaderboardStore?.clearProtectedState() }
+        leaderboardStore.onVisibilityDenied = { [weak leaderboardAccess] in leaderboardAccess?.markDisabled() }
         closedRequestsStore = ClosedRequestsStore()
+        closedRequestsStore.workStatistics = workStatistics
         let simpleOneStore = SimpleOneRequestsStore(
             notificationCoordinator: SimpleOneRequestNotificationCoordinator(
                 config: config,
@@ -132,6 +144,8 @@ final class AppDataStores {
         guard identity != protectedIdentity else { return }
         protectedIdentity = identity
         closedRequestsStore.cancelClosedRequestsSync()
+        workStatistics.clearProtectedState(); leaderboardStore.clearProtectedState(); leaderboardAccess.clearProtectedState()
+        Task { await leaderboardAccess.refresh() }
         wikiStore.clearProtectedState(); ftpStore.clearProtectedState(); assistantStore.clearProtectedState()
         FTPBackgroundDownloadManager.shared.revokeUnauthorized()
         if identity != nil {
@@ -166,46 +180,7 @@ final class AppDataStores {
         do {
             try await closedRequestsStore.waitForClosedRequestsSyncAvailability()
 
-            if closedRequestsStore.snapshot == nil || closedRequestsStore.needsMerchantTINRepair {
-                let narrowHead = try? await simpleOneStore.fetchClosedSyncHead(scope: .narrow)
-                let wideHead = try? await simpleOneStore.fetchClosedSyncHead(scope: .wide)
-                let exportedFile = try await simpleOneStore.exportClosedRequestsXLSXForCurrentUser()
-                await closedRequestsStore.importSpreadsheet(
-                    data: exportedFile.data,
-                    fileName: exportedFile.fileName
-                )
-                let baselineUserID = narrowHead?.userID ?? wideHead?.userID
-                let baselineUsersMatch = narrowHead == nil
-                    || wideHead == nil
-                    || narrowHead?.userID == wideHead?.userID
-                if let baselineUserID,
-                   baselineUsersMatch,
-                   closedRequestsStore.errorMessage == nil {
-                    await closedRequestsStore.setClosedRequestsSyncBaseline(
-                        userID: baselineUserID,
-                        narrow: narrowHead?.cursor,
-                        wide: wideHead?.cursor
-                    )
-                }
-                if closedRequestsStore.errorMessage == nil {
-                    closedRequestsStore.markMerchantTINRepairCompleted()
-                }
-                return
-            }
-
-            _ = try await closedRequestsStore.synchronizeFromSimpleOne(
-                simpleOneStore,
-                scope: .narrow,
-                waitsForCurrentSync: true
-            )
-            if let userID = simpleOneStore.currentUser?.sysID,
-               closedRequestsStore.shouldRunWideClosedRequestsSync(userID: userID) {
-                _ = try await closedRequestsStore.synchronizeFromSimpleOne(
-                    simpleOneStore,
-                    scope: .wide,
-                    waitsForCurrentSync: true
-                )
-            }
+            try await closedRequestsStore.refreshVerifiedClosedArchive(simpleOneStore)
         } catch is CancellationError {
             return
         } catch {

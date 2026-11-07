@@ -368,6 +368,9 @@ nonisolated extension SimpleOneRequestsService {
                     : fieldString(item, mapping.key)
             }
             row[mapping.label] = mapping.date ? Self.closedSyncExportDate(value) : value
+            if mapping.key == "resolved_at" || mapping.key == "multicard_closing_date" {
+                row["__workStatisticsUTC:" + mapping.label] = value
+            }
         }
         row["ИНН ТСП"] = fieldString(
             item,
@@ -434,6 +437,9 @@ nonisolated extension SimpleOneRequestsService {
                     value = fieldString(detailItem ?? [:], mapping.key)
                 }
                 row[mapping.label] = mapping.date ? Self.closedSyncExportDate(value) : value
+            if mapping.key == "resolved_at" || mapping.key == "multicard_closing_date" {
+                row["__workStatisticsUTC:" + mapping.label] = value
+            }
             }
         }
         row["ИНН ТСП"] = ClosedRequestsMerchantTINSupport.resolvedTIN(

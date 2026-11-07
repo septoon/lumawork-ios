@@ -87,6 +87,7 @@ nonisolated enum XLSXRequestsParser {
             ),
             engineerComment: value(for: "Комментарий инженера", in: row),
             closedAt: normalizedClosedAt(closedAt),
+            workStatisticsDate: WorkStatisticsAggregator.sourceDate(from: row, infoFields: infoFields),
             registeredAt: normalizedClosedAt(registeredAt),
             closureCode: importValue(
                 for: ["Код закрытия", "Код закрытия МК", "Код закрытия заявки", "Код решения", "Результат закрытия"],
