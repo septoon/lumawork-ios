@@ -415,7 +415,7 @@ struct LumaWorkAuthAPI {
         let data: Data
         let urlResponse: URLResponse
         do {
-            NetworkDiagnostics.logRequest(request, body: body)
+            NetworkDiagnostics.logRequest(request, body: body, operation: .authentication)
             (data, urlResponse) = try await dataWithRetry(
                 for: request,
                 maxAttempts: maxAttempts
@@ -423,7 +423,7 @@ struct LumaWorkAuthAPI {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            NetworkDiagnostics.logError(url: request.url ?? baseURL, method: method, error: error)
+            NetworkDiagnostics.logError(url: request.url ?? baseURL, method: method, error: error, operation: .authentication)
             switch AppErrorPresentation.classification(for: error) {
             case .cancellation:
                 throw CancellationError()
@@ -439,7 +439,7 @@ struct LumaWorkAuthAPI {
         }
 
         if let url = request.url {
-            NetworkDiagnostics.logResponse(url: url, statusCode: httpResponse.statusCode, data: data)
+            NetworkDiagnostics.logResponse(url: url, statusCode: httpResponse.statusCode, data: data, method: method, operation: .authentication)
         }
 
         guard (200 ..< 300).contains(httpResponse.statusCode) else {

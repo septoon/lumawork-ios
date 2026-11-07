@@ -1,0 +1,3 @@
+// Safe base configuration for a clean checkout. No service credentials belong here.
+// Existing developer settings remain optional and take precedence as before.
+#include? "Secrets.xcconfig"

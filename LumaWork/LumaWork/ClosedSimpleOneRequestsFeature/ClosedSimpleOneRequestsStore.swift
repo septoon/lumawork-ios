@@ -214,7 +214,7 @@ final class ClosedSimpleOneRequestsStore {
                 let data = try JSONEncoder().encode(snapshot)
                 try data.write(to: url, options: [.atomic])
             } catch {
-                Logger(subsystem: "LumaWork", category: "ClosedSimpleOne").error("Closed SimpleOne cache save failed: \(error.localizedDescription, privacy: .public)")
+                Logger(subsystem: "LumaWork", category: "ClosedSimpleOne").error("Closed SimpleOne cache save failed: category=\(NetworkDiagnostics.errorCategory(error), privacy: .public)")
             }
         }
     }

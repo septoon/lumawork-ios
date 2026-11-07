@@ -516,9 +516,7 @@ final class FuelStore {
         } catch let error as URLError where error.code == .cancelled {
             return
         } catch {
-            NetworkDiagnostics.logger.debug(
-                "Background fuel mileage sync postponed for \(mileage.monthKey, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
+            NetworkDiagnostics.logFailure(operation: .fuelMileage, error: error)
         }
     }
 

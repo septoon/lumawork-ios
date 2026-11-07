@@ -304,7 +304,7 @@ extension ClosedRequestsScreen {
             return 0
         } catch {
             Logger(subsystem: "LumaWork", category: "ClosedRequestsSync")
-                .error("Automatic closed requests sync failed: \(error.localizedDescription, privacy: .public)")
+                .error("Automatic closed requests sync failed: category=\(NetworkDiagnostics.errorCategory(error), privacy: .public)")
             if reportsErrors {
                 store.errorMessage = appUserFacingErrorMessage(error)
             }

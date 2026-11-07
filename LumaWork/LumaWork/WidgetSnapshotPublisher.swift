@@ -84,7 +84,7 @@ enum WidgetSnapshotPublisher {
             try snapshotStore.save(snapshot)
             WidgetCenter.shared.reloadTimelines(ofKind: LumaWorkSharedConfiguration.widgetKind)
         } catch {
-            logger.error("Widget snapshot save failed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Widget snapshot save failed: category=\(NetworkDiagnostics.errorCategory(error), privacy: .public)")
         }
     }
 

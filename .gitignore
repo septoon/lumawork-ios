@@ -49,4 +49,5 @@ Design/
 scripts/
 
 /DEPTHSTACK.md
-/Info.plist
+# Info.plist contains public iOS metadata and build-setting references only.
+# Keep it versioned; private values remain in ignored Secrets*.xcconfig files.

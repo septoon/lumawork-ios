@@ -37,7 +37,7 @@
 
 /* Begin PBXFileReference section */
 		B5170B3B2F86DA8500A9C221 /* LumaWork.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LumaWork.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		B5A7C9012F89C0000010AA01 /* ../Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = ../Secrets.xcconfig; sourceTree = "<group>"; };
+		B5A7C9012F89C0000010AA01 /* ../Build.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = ../Build.xcconfig; sourceTree = "<group>"; };
 		B5B000032F90000100B00003 /* LumaWorkWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LumaWorkWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -97,7 +97,7 @@
 				B5170B3D2F86DA8500A9C221 /* LumaWork */,
 				B5B000012F90000100B00001 /* ../LumaWorkShared */,
 				B5B000022F90000100B00002 /* ../LumaWorkWidget */,
-				B5A7C9012F89C0000010AA01 /* ../Secrets.xcconfig */,
+				B5A7C9012F89C0000010AA01 /* ../Build.xcconfig */,
 				B5170B3C2F86DA8500A9C221 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -375,7 +375,7 @@
 		};
 		B5170B472F86DA8700A9C221 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = B5A7C9012F89C0000010AA01 /* ../Secrets.xcconfig */;
+			baseConfigurationReference = B5A7C9012F89C0000010AA01 /* ../Build.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -413,7 +413,7 @@
 		};
 		B5170B482F86DA8700A9C221 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = B5A7C9012F89C0000010AA01 /* ../Secrets.xcconfig */;
+			baseConfigurationReference = B5A7C9012F89C0000010AA01 /* ../Build.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

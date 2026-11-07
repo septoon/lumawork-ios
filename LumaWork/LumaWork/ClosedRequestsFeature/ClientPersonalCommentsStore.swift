@@ -362,7 +362,7 @@ final class ClientPersonalCommentsStore {
                 let data = try JSONEncoder().encode(comments)
                 try data.write(to: Self.storeURL, options: [.atomic])
             } catch {
-                assertionFailure("Client comments save failed: \(error.localizedDescription)")
+                assertionFailure("Client comments save failed: category=\(NetworkDiagnostics.errorCategory(error))")
             }
         }
     }
@@ -465,7 +465,7 @@ enum ClientPersonalCommentDraftStore {
             let data = try JSONEncoder().encode(draft)
             try data.write(to: storeURL, options: [.atomic])
         } catch {
-            assertionFailure("Client comment draft save failed: \(error.localizedDescription)")
+            assertionFailure("Client comment draft save failed: category=\(NetworkDiagnostics.errorCategory(error))")
         }
     }
 

@@ -2,7 +2,10 @@ import Foundation
 import OSLog
 
 // Network/Auto boundaries are test doubles; editor and disk snapshots use production sources.
-enum NetworkDiagnostics { static let logger = Logger(subsystem: "GsmProfileImportTests", category: "cache") }
+enum NetworkDiagnostics {
+    enum Operation { case offlineSnapshot }
+    static func logFailure(operation: Operation, error: Error) {}
+}
 enum AppServiceError: LocalizedError {
     case message(String)
     var errorDescription: String? { if case .message(let value) = self { return value }; return nil }

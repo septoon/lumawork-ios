@@ -308,7 +308,7 @@ final class SimpleOneRequestNotificationCoordinator {
             do {
                 try await center.add(UNNotificationRequest(identifier: event.eventID, content: content, trigger: nil))
             } catch {
-                logger.error("Local notification failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Local notification failed: category=\(NetworkDiagnostics.errorCategory(error), privacy: .public)")
             }
         }
 
@@ -317,7 +317,7 @@ final class SimpleOneRequestNotificationCoordinator {
                 try await api.send(event)
             } catch {
                 enqueuePendingEmailEvent(event)
-                logger.error("Email notification event failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Email notification event failed: category=\(NetworkDiagnostics.errorCategory(error), privacy: .public)")
             }
         }
     }

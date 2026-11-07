@@ -794,7 +794,7 @@ final class SimpleOneRequestsStore {
                 )
                 try data.write(to: url, options: [.atomic])
             } catch {
-                logger.error("SimpleOne details cache save failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("SimpleOne details cache save failed: category=\(NetworkDiagnostics.errorCategory(error), privacy: .public)")
             }
         }
     }
@@ -857,7 +857,7 @@ final class SimpleOneRequestsStore {
                 )
                 try data.write(to: url, options: [.atomic])
             } catch {
-                logger.error("SimpleOne archive save failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("SimpleOne archive save failed: category=\(NetworkDiagnostics.errorCategory(error), privacy: .public)")
             }
         }
     }

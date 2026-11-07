@@ -75,62 +75,61 @@ enum AppDeviceIdentity {
 }
 
 nonisolated enum NetworkDiagnostics {
-    static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "LumaWork", category: "network")
-
-    static func logRequest(_ request: URLRequest, body: Any?) {
-        let method = request.httpMethod ?? "GET"
-        let url = request.url?.absoluteString ?? "<nil>"
-        logger.info("HTTP request started: \(method, privacy: .public) \(url, privacy: .public)")
-
-        if let body {
-            let preview = String(describing: sanitizedForLogging(body)).prefix(400)
-            logger.debug("HTTP request body: \(String(preview), privacy: .public)")
-        }
+    enum Operation: String {
+        case http, authentication, routes, offlineSnapshot, fuelMileage
     }
 
-    private static func sanitizedForLogging(_ value: Any) -> Any {
-        if let dictionary = value as? [String: Any] {
-            return dictionary.mapValues { keyValue in
-                sanitizedForLogging(keyValue)
-            }.reduce(into: [String: Any]()) { result, pair in
-                let normalizedKey = pair.key.lowercased()
-                if normalizedKey.contains("base64")
-                    || normalizedKey.contains("password")
-                    || normalizedKey.contains("token")
-                    || normalizedKey == "code" {
-                    result[pair.key] = "<redacted>"
-                } else {
-                    result[pair.key] = pair.value
-                }
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "LumaWork", category: "network")
+
+    // Allowlisted metadata only, in every build. Never inspect bodies, URLs or headers.
+    static func logRequest(_ request: URLRequest, body _: Any?, operation: Operation = .http) {
+        logger.info("HTTP request started: operation=\(operation.rawValue, privacy: .public) method=\(safeMethod(request.httpMethod), privacy: .public)")
+    }
+
+    static func logResponse(url _: URL, statusCode: Int, data: Data, method: String = "GET", operation: Operation = .http) {
+        logger.info("HTTP response received: operation=\(operation.rawValue, privacy: .public) method=\(safeMethod(method), privacy: .public) status=\(statusCode) bytes=\(data.count)")
+    }
+
+    static func logError(url _: URL, method: String, error: Error, operation: Operation = .http) {
+        logger.error("HTTP request failed: operation=\(operation.rawValue, privacy: .public) method=\(safeMethod(method), privacy: .public) category=\(errorCategory(error), privacy: .public)")
+    }
+
+    static func logInvalidResponse(method: String, operation: Operation = .http) {
+        logger.error("HTTP response casting failed: operation=\(operation.rawValue, privacy: .public) method=\(safeMethod(method), privacy: .public) category=invalid-response")
+    }
+
+    static func logFailure(operation: Operation, error: Error) {
+        logger.error("Operation failed: operation=\(operation.rawValue, privacy: .public) category=\(errorCategory(error), privacy: .public)")
+    }
+
+    static func errorCategory(_ error: Error) -> String {
+        if error is CancellationError { return "cancellation" }
+        if let error = error as? URLError {
+            switch error.code {
+            case .cancelled: return "cancellation"
+            case .timedOut: return "timeout"
+            case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost,
+                 .dnsLookupFailed, .networkConnectionLost: return "connection"
+            case .secureConnectionFailed, .serverCertificateHasBadDate,
+                 .serverCertificateUntrusted, .serverCertificateHasUnknownRoot,
+                 .serverCertificateNotYetValid, .clientCertificateRejected,
+                 .clientCertificateRequired: return "tls"
+            default: return "network"
             }
         }
-        if let values = value as? [Any] {
-            return values.map(sanitizedForLogging)
-        }
-        return value
+        if error is DecodingError { return "decoding" }
+        if error is EncodingError { return "encoding" }
+        if error is CocoaError { return "storage" }
+        // Descriptions, reflected types, domains and userInfo can contain server/user data.
+        return "other"
     }
 
-    static func logResponse(url: URL, statusCode: Int, data: Data) {
-        logger.info(
-            "HTTP response received: \(url.absoluteString, privacy: .public) status=\(statusCode) bytes=\(data.count)"
-        )
-    }
-
-    static func logError(url: URL, method: String, error: Error) {
-        if let urlError = error as? URLError {
-            logger.error(
-                """
-                HTTP request failed: \(method, privacy: .public) \(url.absoluteString, privacy: .public) \
-                code=\(urlError.code.rawValue) \
-                reason=\(urlError.localizedDescription, privacy: .public)
-                """
-            )
-            return
+    private static func safeMethod(_ method: String?) -> String {
+        let method = method ?? "GET"
+        switch method {
+        case "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE": return method
+        default: return "OTHER"
         }
-
-        logger.error(
-            "HTTP request failed: \(method, privacy: .public) \(url.absoluteString, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-        )
     }
 }
 
@@ -181,13 +180,11 @@ struct HTTPClient {
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            NetworkDiagnostics.logger.error(
-                "HTTP response casting failed: \(url.absoluteString, privacy: .public)"
-            )
+            NetworkDiagnostics.logInvalidResponse(method: method)
             throw AppServiceError.message("Сервер вернул неизвестный ответ.")
         }
 
-        NetworkDiagnostics.logResponse(url: url, statusCode: httpResponse.statusCode, data: data)
+        NetworkDiagnostics.logResponse(url: url, statusCode: httpResponse.statusCode, data: data, method: method)
 
         if method != "GET" {
             URLCache.shared.removeCachedResponse(for: request)

@@ -34,9 +34,7 @@ nonisolated enum AppOfflineSnapshotStore {
                 ofItemAtPath: url.path
             )
         } catch {
-            NetworkDiagnostics.logger.error(
-                "Offline snapshot save failed: \(key, privacy: .public) \(error.localizedDescription, privacy: .public)"
-            )
+            NetworkDiagnostics.logFailure(operation: .offlineSnapshot, error: error)
         }
     }
 

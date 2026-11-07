@@ -327,8 +327,7 @@ final class ClosedRequestsStore {
         closedSyncProgressText = scope == .narrow ? "Проверяю последние закрытые заявки…" : "Проверяю историю закрытых заявок…"
         let startedAt = Date()
         let logger = Logger(subsystem: "LumaWork", category: "ClosedRequestsSync")
-        let startingPoint = context.watermark?.updatedAt ?? (scope == .wide ? "head-probe" : "full")
-        logger.info("Started scope=\(scope.rawValue, privacy: .public), since=\(startingPoint, privacy: .public), knownVersions=\(context.knownVersionsBySysID.count)")
+        logger.info("Started scope=\(scope.rawValue, privacy: .public), hasWatermark=\(context.watermark != nil), knownVersions=\(context.knownVersionsBySysID.count)")
         let task = Task { @MainActor [weak self] () throws -> Int in
             guard let self else { throw CancellationError() }
 #if canImport(UIKit)

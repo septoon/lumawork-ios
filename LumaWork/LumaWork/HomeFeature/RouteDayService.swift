@@ -377,7 +377,7 @@ struct RouteDayService {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
 
-        NetworkDiagnostics.logRequest(request, body: body)
+        NetworkDiagnostics.logRequest(request, body: body, operation: .routes)
 
         let data: Data
         let response: URLResponse
@@ -385,13 +385,13 @@ struct RouteDayService {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch let error as URLError {
-            NetworkDiagnostics.logError(url: url, method: method, error: error)
+            NetworkDiagnostics.logError(url: url, method: method, error: error, operation: .routes)
             if AppErrorPresentation.isCancellation(error) {
                 throw CancellationError()
             }
             throw RouteDayServiceError.infrastructure(routeNetworkMessage(for: error))
         } catch {
-            NetworkDiagnostics.logError(url: url, method: method, error: error)
+            NetworkDiagnostics.logError(url: url, method: method, error: error, operation: .routes)
             switch AppErrorPresentation.classification(for: error) {
             case .cancellation:
                 throw CancellationError()
@@ -406,7 +406,7 @@ struct RouteDayService {
             throw RouteDayServiceError.invalidResponse("Сервер вернул неизвестный ответ.")
         }
 
-        NetworkDiagnostics.logResponse(url: url, statusCode: httpResponse.statusCode, data: data)
+        NetworkDiagnostics.logResponse(url: url, statusCode: httpResponse.statusCode, data: data, method: method, operation: .routes)
 
         guard acceptedStatuses.contains(httpResponse.statusCode) else {
             let message = responseMessage(from: data)
