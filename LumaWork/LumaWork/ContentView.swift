@@ -48,6 +48,14 @@ struct ContentView: View {
         ) {
             selectedScreen
         }
+        .task(id: "personal-state|\(scenePhase)|\(sessionStore.isOfflineMode)|\(stores.simpleOneStore.isAuthorized)") {
+            guard scenePhase == .active, !sessionStore.isOfflineMode, stores.simpleOneStore.isAuthorized else { return }
+            while !Task.isCancelled {
+                await stores.backpackLocations.state.synchronize()
+                await stores.ftpStore.favoritesState.synchronize()
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            }
+        }
         .task(id: "\(sessionStore.session?.user.id ?? "")|\(sessionStore.isOfflineMode)") {
             guard !sessionStore.isOfflineMode, stores.gsmProfileStore.needsImportOfferCheck else { return }
             await stores.gsmProfileStore.load()
@@ -230,7 +238,8 @@ struct ContentView: View {
                 store: stores.backpackStore,
                 simpleOneStore: stores.simpleOneStore,
                 coordinationStore: stores.coordinationStore,
-                equipmentStore: stores.officeEquipmentStore
+                equipmentStore: stores.officeEquipmentStore,
+                locationStore: stores.backpackLocations
             )
         case .employees:
             EmployeesScreen(

@@ -92,47 +92,37 @@ private enum BackpackItemLocation: String, CaseIterable, Identifiable {
 
 @MainActor
 @Observable
-private final class BackpackItemLocationStore {
-    private static let storageKey = "backpack-terminal-location-overrides-v2"
+final class BackpackItemLocationStore {
+    let state: PersonalStateStore
 
-    private let defaults: UserDefaults
-    private var rawLocations: [String: String]
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        if let data = defaults.data(forKey: Self.storageKey),
-           let locations = try? JSONDecoder().decode([String: String].self, from: data) {
-            rawLocations = locations
-        } else {
-            rawLocations = [:]
+    init(config: AppConfig, ownerID: String, defaults: UserDefaults = .standard) {
+        let claimKey = "backpack-location-migration-owner-v3"
+        var legacy = [String: String]()
+        if !ownerID.isEmpty && (defaults.string(forKey: claimKey) == nil || defaults.string(forKey: claimKey) == ownerID) {
+            if let data = defaults.data(forKey: "backpack-terminal-location-overrides-v2"),
+               let stored = try? JSONDecoder().decode([String: String].self, from: data) { legacy = stored }
+            let prefix = "backpack-terminal-location-v1."
+            for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix(prefix) {
+                let identity = String(key.dropFirst(prefix.count))
+                if legacy[identity] == nil, let raw = value as? String { legacy[identity] = raw }
+            }
+            defaults.set(ownerID, forKey: claimKey)
         }
+        legacy = legacy.filter { !$0.key.isEmpty && BackpackItemLocation(rawValue: $0.value) != nil }
+        let api = PersonalStateAPI(config: config, ownerID: ownerID, collection: "backpack-locations")
+        state = PersonalStateStore(ownerID: ownerID, collection: "backpack-locations", defaults: defaults, seed: legacy,
+            synchronize: { seed, changes in try await api.synchronize(seed: seed, changes: changes) })
     }
 
-    func location(
-        for item: BackpackItem,
-        isReturnEquipment: Bool
-    ) -> BackpackItemLocation {
-        let identity = BackpackItemLocation.storageIdentity(for: item)
-        if let rawLocation = rawLocations[identity],
-           let location = BackpackItemLocation(rawValue: rawLocation) {
-            return location
-        }
-        if let legacyRawLocation = defaults.string(
-            forKey: BackpackItemLocation.legacyStorageKey(for: item)
-        ), let legacyLocation = BackpackItemLocation(rawValue: legacyRawLocation) {
-            return legacyLocation
-        }
+    fileprivate func location(for item: BackpackItem, isReturnEquipment: Bool) -> BackpackItemLocation {
+        if let raw = state.values[BackpackItemLocation.storageIdentity(for: item)],
+           let location = BackpackItemLocation(rawValue: raw) { return location }
         return isReturnEquipment ? .car : .warehouse
     }
 
-    func setLocation(_ location: BackpackItemLocation, for item: BackpackItem) {
-        var updatedLocations = rawLocations
-        updatedLocations[BackpackItemLocation.storageIdentity(for: item)] = location.rawValue
-        rawLocations = updatedLocations
-        defaults.removeObject(forKey: BackpackItemLocation.legacyStorageKey(for: item))
-
-        guard let data = try? JSONEncoder().encode(updatedLocations) else { return }
-        defaults.set(data, forKey: Self.storageKey)
+    fileprivate func setLocation(_ location: BackpackItemLocation, for item: BackpackItem) {
+        state.set(location.rawValue, for: BackpackItemLocation.storageIdentity(for: item))
+        Task { await state.synchronize() }
     }
 }
 
@@ -456,7 +446,7 @@ struct BackpackScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var store: BackpackStore
     @State private var photoStore = BackpackPhotoStore()
-    @State private var locationStore = BackpackItemLocationStore()
+    let locationStore: BackpackItemLocationStore
     @State private var selectedGroup: BackpackItemGroup?
     @State private var selectedLocationFilter: BackpackItemLocation?
     @State private var searchText = ""
@@ -470,11 +460,13 @@ struct BackpackScreen: View {
         store: BackpackStore,
         simpleOneStore: SimpleOneRequestsStore,
         coordinationStore: CoordinationStore,
-        equipmentStore: OfficeEquipmentStore
+        equipmentStore: OfficeEquipmentStore,
+        locationStore: BackpackItemLocationStore
     ) {
         self.simpleOneStore = simpleOneStore
         self.coordinationStore = coordinationStore
         self.equipmentStore = equipmentStore
+        self.locationStore = locationStore
         _store = State(initialValue: store)
     }
 
@@ -637,10 +629,12 @@ struct BackpackScreen: View {
             }
         }
         .refreshable {
+            await locationStore.state.synchronize()
             if simpleOneStore.isAuthorized, !store.isLoading {
                 await refresh()
             }
         }
+        .task { await locationStore.state.synchronize() }
         .task(id: simpleOneDataScopeID) {
             guard simpleOneStore.isAuthorized else { return }
             await store.refresh()

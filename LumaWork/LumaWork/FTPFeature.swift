@@ -112,25 +112,28 @@ final class FTPStore {
     private let service: FTPAPI
     private let downloadManager: FTPBackgroundDownloadManager
     private let cacheKey: String
-    private let favoritesKey: String
+    let favoritesState: PersonalStateStore
     private let ownerID: String
 
     private(set) var itemsByPath: [String: [FTPItem]] = [:]
     private(set) var loadingPaths: Set<String> = []
     private(set) var errorsByPath: [String: String] = [:]
-    private(set) var favoritePaths: [String] = []
+    var favoritePaths: [String] {
+        hasAccess ? favoritesState.values.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending } : []
+    }
     var downloadError: String?
 
     init(
         service: FTPAPI,
         downloadManager: FTPBackgroundDownloadManager,
-        cacheID: String? = nil
+        cacheID: String? = nil,
+        favoritesState: PersonalStateStore
     ) {
         self.service = service
         self.downloadManager = downloadManager
         ownerID = cacheID ?? "anonymous"
         cacheKey = AppOfflineSnapshotStore.scopedKey("ftp-directories", userID: cacheID)
-        favoritesKey = AppOfflineSnapshotStore.scopedKey("ftp-favorites", userID: cacheID)
+        self.favoritesState = favoritesState
         restoreProtectedCache()
     }
 
@@ -142,11 +145,10 @@ final class FTPStore {
         ) {
             itemsByPath = snapshot.value
         }
-        favoritePaths = AppOfflineSnapshotStore.load([String].self, key: favoritesKey)?.value ?? []
     }
 
     func clearProtectedState() {
-        itemsByPath = [:]; favoritePaths = []; errorsByPath = [:]; downloadError = nil
+        itemsByPath = [:]; errorsByPath = [:]; downloadError = nil
     }
     private var hasAccess: Bool { (try? SimpleOneProtectedAccess.capture(ownerID: ownerID)) != nil }
 
@@ -156,13 +158,8 @@ final class FTPStore {
 
     func toggleFavorite(_ path: String) {
         guard hasAccess, path != "/" else { return }
-        if let index = favoritePaths.firstIndex(of: path) {
-            favoritePaths.remove(at: index)
-        } else {
-            favoritePaths.append(path)
-            favoritePaths.sort { $0.localizedStandardCompare($1) == .orderedAscending }
-        }
-        AppOfflineSnapshotStore.save(favoritePaths, key: favoritesKey)
+        favoritesState.set(favoritePaths.contains(path) ? nil : "selected", for: path)
+        Task { await favoritesState.synchronize() }
     }
 
     func items(at path: String) -> [FTPItem] {

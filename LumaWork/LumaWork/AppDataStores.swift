@@ -21,6 +21,7 @@ final class AppDataStores {
     let gsmProfileStore: GsmProfileSettingsStore
     let wikiStore: WikiStore
     let ftpStore: FTPStore
+    let backpackLocations: BackpackItemLocationStore
     let backpackStore: BackpackStore
     let officeEquipmentStore: OfficeEquipmentStore
     let assistantStore: AssistantStore
@@ -101,10 +102,18 @@ final class AppDataStores {
             service: WikiAPI(config: config, authToken: authToken),
             cacheID: userID
         )
+        let favoritesAPI = PersonalStateAPI(config: config, ownerID: userID ?? "", collection: "ftp-favorites")
+        let oldFavorites = AppOfflineSnapshotStore.load([String].self,
+            key: AppOfflineSnapshotStore.scopedKey("ftp-favorites", userID: userID))?.value ?? []
+        let favoritesState = PersonalStateStore(ownerID: userID ?? "", collection: "ftp-favorites",
+            seed: Dictionary(oldFavorites.filter { $0 != "/" && !$0.isEmpty }.map { ($0, "selected") }, uniquingKeysWith: { a, _ in a }),
+            synchronize: { seed, changes in try await favoritesAPI.synchronize(seed: seed, changes: changes) })
+        backpackLocations = BackpackItemLocationStore(config: config, ownerID: userID ?? "")
         ftpStore = FTPStore(
             service: FTPAPI(config: config, authToken: authToken),
             downloadManager: .shared,
-            cacheID: userID
+            cacheID: userID,
+            favoritesState: favoritesState
         )
         let backpackStore = BackpackStore(cacheID: userID)
         self.backpackStore = backpackStore
