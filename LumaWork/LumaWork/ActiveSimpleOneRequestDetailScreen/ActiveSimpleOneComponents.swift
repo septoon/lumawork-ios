@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ActiveRequestHeaderMetric: View {
     var icon: String?
+    var requestType: String?
     var prefix: String?
     let title: String
     var isLinkLike = false
@@ -10,7 +11,11 @@ struct ActiveRequestHeaderMetric: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            if let icon {
+            if let requestType {
+                SimpleOneRequestTypeIcon(requestType: requestType)
+                    .foregroundStyle(ActiveRequestStyle.mutedText)
+                    .frame(width: 21, height: 24)
+            } else if let icon {
                 Image(systemName: icon)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(ActiveRequestStyle.mutedText)

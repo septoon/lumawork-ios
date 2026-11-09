@@ -254,7 +254,8 @@ struct CoordinationGroupClosedRequestsScreen: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     ClosedRequestsScreen.RequestChip(
                         text: display.requestType,
-                        style: .requestType(display.requestType)
+                        style: .requestType(display.requestType),
+                        showsRequestTypeIcon: true
                     )
                 }
                 infoRow(title: display.timeTitle, value: display.closedAtText)

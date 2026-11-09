@@ -278,7 +278,6 @@ struct CoordinationScreen: View {
                     } label: {
                         CoordinationRequestRow(
                             record: request,
-                            showsRequestType: false,
                             usesMulticardStatus: false,
                             terminalSerialNumber: store.returnEquipmentSerialNumber(for: request)
                         )
@@ -1061,10 +1060,9 @@ private struct CoordinationRequestRow: View {
                 HStack(spacing: 8) {
                     if showsRequestType, !requestTypeText.isEmpty {
                         HStack(spacing: 8) {
-                            Image(systemName: "wrench.and.screwdriver")
-                                .font(.caption.weight(.semibold))
+                            SimpleOneRequestTypeIcon(requestType: requestTypeText)
                                 .foregroundStyle(AppTheme.mutedTint)
-                                .frame(width: 17)
+                                .frame(width: 17, height: 20)
                             Text(requestTypeText)
                                 .font(.subheadline)
                                 .foregroundStyle(AppTheme.mutedTint)

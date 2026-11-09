@@ -283,16 +283,23 @@ extension ClosedRequestsScreen {
     struct RequestChip: View {
         let text: String
         let style: RequestChipStyle
+        var showsRequestTypeIcon = false
 
         var body: some View {
-            Text(text)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .foregroundStyle(style.foreground)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(style.background, in: Capsule())
+            HStack(spacing: 5) {
+                if showsRequestTypeIcon {
+                    SimpleOneRequestTypeIcon(requestType: text)
+                        .frame(width: 14, height: 14)
+                }
+                Text(text)
+            }
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+            .foregroundStyle(style.foreground)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(style.background, in: Capsule())
         }
     }
 

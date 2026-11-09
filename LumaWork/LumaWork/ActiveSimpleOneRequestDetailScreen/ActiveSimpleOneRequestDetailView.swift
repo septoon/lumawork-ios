@@ -270,7 +270,7 @@ struct ActiveSimpleOneRequestDetailScreen: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 ActiveRequestHeaderMetric(icon: "alarm", title: data.deadlineText)
-                ActiveRequestHeaderMetric(icon: "arrow.triangle.2.circlepath", title: data.requestTypeText)
+                ActiveRequestHeaderMetric(requestType: data.requestTypeText, title: data.requestTypeText)
                 ActiveRequestHeaderMetric(
                     prefix: "TID",
                     title: data.terminalID,
