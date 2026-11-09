@@ -1191,6 +1191,7 @@ private struct AppSidebarSettingsPlaceholder: View {
         }
         .scrollContentBackground(.hidden)
         .background(AppTheme.background)
+        .contentMargins(.top, 0, for: .scrollContent)
         .navigationTitle("Настройки")
         .navigationBarTitleDisplayMode(.inline)
         .task {
