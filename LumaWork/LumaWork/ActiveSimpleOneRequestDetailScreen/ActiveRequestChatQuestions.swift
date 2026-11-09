@@ -2,14 +2,6 @@ import Foundation
 import SwiftUI
 
 enum ActiveRequestChatQuestions {
-    static var dionURL: URL? {
-        guard let raw = Bundle.main.object(forInfoDictionaryKey: "DION_CHAT_URL") as? String else {
-            return nil
-        }
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("$(") else { return nil }
-        return URL(string: trimmed)
-    }
     static var telegramAppURL: URL? {
         AppConfig().telegramAppURL.flatMap(URL.init(string:))
     }
@@ -195,14 +187,14 @@ struct ActiveRequestChatQuestionsBlock: View {
 
             chatActionButton(
                 title: "КА и пин",
-                subtitle: "Скопировать текст и открыть чат Dion",
+                subtitle: "Скопировать текст",
                 systemName: "bubble.left.and.bubble.right.fill",
                 action: kaAndPinAction
             )
 
             chatActionButton(
                 title: "Активация ОФД",
-                subtitle: "Скопировать текст и открыть чат Dion",
+                subtitle: "Скопировать текст",
                 systemName: "checkmark.shield.fill",
                 action: ofdActivationAction
             )
@@ -211,10 +203,11 @@ struct ActiveRequestChatQuestionsBlock: View {
                 title: "Код автореги",
                 subtitle: "Скопировать текст и открыть Telegram",
                 systemName: "paperplane.fill",
+                trailingSystemName: "arrow.up.right",
                 action: autoregAction
             )
 
-            Text("После перехода в чат нажмите «Вставить» в поле сообщения и отправьте текст.")
+            Text("Скопированный текст можно вставить в нужный чат и отправить.")
                 .font(.footnote)
                 .foregroundStyle(AppTheme.mutedTint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -225,6 +218,7 @@ struct ActiveRequestChatQuestionsBlock: View {
         title: String,
         subtitle: String,
         systemName: String,
+        trailingSystemName: String = "doc.on.doc",
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -247,7 +241,7 @@ struct ActiveRequestChatQuestionsBlock: View {
 
                 Spacer(minLength: 8)
 
-                Image(systemName: "arrow.up.right")
+                Image(systemName: trailingSystemName)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(AppTheme.primaryTint)
             }

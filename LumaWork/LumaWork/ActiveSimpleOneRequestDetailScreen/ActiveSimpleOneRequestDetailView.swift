@@ -111,10 +111,10 @@ struct ActiveSimpleOneRequestDetailScreen: View {
                     if data.shouldShowChatQuestions {
                         ActiveRequestChatQuestionsBlock(
                             kaAndPinAction: {
-                                openKaAndPinQuestions()
+                                copyKaAndPinQuestions()
                             },
                             ofdActivationAction: {
-                                openOFDAActivationQuestions()
+                                copyOFDAActivationQuestions()
                             },
                             autoregAction: {
                                 openAutoregQuestions()
@@ -372,19 +372,16 @@ struct ActiveSimpleOneRequestDetailScreen: View {
         browserDestination = SimpleOneBrowserDestination(url: url, authKey: simpleOneAuthKey)
     }
 
-    private func openKaAndPinQuestions() {
-        openDionChatQuestion(message: data.kaAndPinMessage)
+    private func copyKaAndPinQuestions() {
+        copyChatQuestion(message: data.kaAndPinMessage)
     }
 
-    private func openOFDAActivationQuestions() {
-        openDionChatQuestion(message: data.ofdActivationMessage)
+    private func copyOFDAActivationQuestions() {
+        copyChatQuestion(message: data.ofdActivationMessage)
     }
 
     private func openAutoregQuestions() {
-        AppHaptics.trigger()
-        chatQuestionsNotice = nil
-        AppClipboard.copy(data.autoregMessage)
-        chatQuestionsNotice = "Текст скопирован. После перехода в Telegram нажмите «Вставить» в поле сообщения."
+        copyChatQuestion(message: data.autoregMessage)
 
         if let appURL = ActiveRequestChatQuestions.telegramAppURL,
            UIApplication.shared.canOpenURL(appURL) {
@@ -397,25 +394,13 @@ struct ActiveSimpleOneRequestDetailScreen: View {
     }
 
     private func copyManagerQuestion() {
-        AppHaptics.trigger()
-        AppClipboard.copy(data.managerQuestionMessage)
-        chatQuestionsNotice = "Текст скопирован. Вставьте его в нужный чат менеджера."
+        copyChatQuestion(message: data.managerQuestionMessage)
     }
 
-    private func openChatQuestion(message: String, destination: URL) {
-        AppHaptics.trigger()
+    private func copyChatQuestion(message: String) {
         chatQuestionsNotice = nil
-        AppClipboard.copy(message)
-        chatQuestionsNotice = "Текст скопирован. После перехода в чат нажмите «Вставить» в поле сообщения."
-        openURL(destination)
-    }
-
-    private func openDionChatQuestion(message: String) {
-        guard let destination = ActiveRequestChatQuestions.dionURL else {
-            chatQuestionsNotice = "Чат Dion не настроен."
-            return
-        }
-        openChatQuestion(message: message, destination: destination)
+        AppHaptics.trigger()
+        AppClipboard.copy(message, message: "Ткст скопирован", deduplicateFeedback: false)
     }
 
     private func openYandexMaps(for address: String) {

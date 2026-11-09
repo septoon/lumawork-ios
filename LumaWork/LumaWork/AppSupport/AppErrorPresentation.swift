@@ -66,6 +66,7 @@ final class AppBannerCenter {
     func show(
         _ message: String,
         style: AppGlobalBannerStyle,
+        deduplicate: Bool = true,
         actionTitle: String? = nil,
         action: (() -> Void)? = nil
     ) {
@@ -77,12 +78,12 @@ final class AppBannerCenter {
 
         let duplicateKey = "\(style.rawValue)|\(normalizedMessage)|\(normalizedActionTitle ?? "")"
         let now = Date()
-        if banner?.message == normalizedMessage,
+        if deduplicate, banner?.message == normalizedMessage,
            banner?.style == style,
            banner?.actionTitle == normalizedActionTitle {
             return
         }
-        if let lastShown = lastShownAt[duplicateKey], now.timeIntervalSince(lastShown) < duplicateCooldown {
+        if deduplicate, let lastShown = lastShownAt[duplicateKey], now.timeIntervalSince(lastShown) < duplicateCooldown {
             return
         }
 

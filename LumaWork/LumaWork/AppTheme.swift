@@ -822,11 +822,11 @@ struct AppEmptyState: View {
 }
 
 enum AppClipboard {
-    static func copy(_ value: String, message: String = "Скопировано") {
+    static func copy(_ value: String, message: String = "Скопировано", deduplicateFeedback: Bool = true) {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         UIPasteboard.general.string = trimmed
-        AppBannerCenter.shared.show(message, style: .success)
+        AppBannerCenter.shared.show(message, style: .success, deduplicate: deduplicateFeedback)
     }
 
     static func copyTerminalID(_ value: String) {
