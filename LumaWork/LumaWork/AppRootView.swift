@@ -78,6 +78,10 @@ struct AppRootView: View {
                 LeaderboardAccessVisualPreview()
             } else if ProcessInfo.processInfo.arguments.contains("-equipment-photo-ui-preview") {
                 OfficeEquipmentPhotoDebugView()
+            } else if ProcessInfo.processInfo.arguments.contains("-admin-application-ui-preview") {
+                NavigationStack {
+                    AdminApplicationScreen()
+                }
             } else if ProcessInfo.processInfo.arguments.contains("-admin-images-ui-preview") {
                 NavigationStack {
                     List {

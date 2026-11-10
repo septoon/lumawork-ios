@@ -22,18 +22,31 @@ enum AdminUserSupportAction {
     }
 }
 
+enum AdminGsmReportRecipient: String {
+    case user
+    case me = "self"
+}
+
 struct AdminUserSupportSheet: View {
     @Environment(\.dismiss) private var dismiss
     let user: AdminUserRecord
     let store: AdminUsersStore
     let action: AdminUserSupportAction
+    var adminEmail: String? = nil
 
     @State private var email = ""
     @State private var repeatedEmail = ""
     @State private var month = Calendar.current.component(.month, from: Date())
     @State private var year = Calendar.current.component(.year, from: Date())
     @State private var isSubmitting = false
+    @State private var reportRecipient: AdminGsmReportRecipient = .user
     @State private var errorMessage: String?
+
+    private static let monthNames: [String] = {
+        let formatter = DateFormatter()
+        formatter.locale = AppLocale.russian
+        return formatter.standaloneMonthSymbols.map { $0.capitalized(with: AppLocale.russian) }
+    }()
 
     private var normalizedEmail: String { email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
     private var canSubmit: Bool {
@@ -51,8 +64,10 @@ struct AdminUserSupportSheet: View {
             Form {
                 Section("Пользователь") {
                     LabeledContent("Имя", value: user.displayName)
-                    LabeledContent(action == .email ? "Текущая почта" : "Получатель", value: user.email)
-                        .textSelection(.enabled)
+                    if action != .gsmReport {
+                        LabeledContent(action == .email ? "Текущая почта" : "Получатель", value: user.email)
+                            .textSelection(.enabled)
+                    }
                 }
 
                 if action == .email {
@@ -71,10 +86,28 @@ struct AdminUserSupportSheet: View {
                 }
 
                 if action == .gsmReport {
+                    Section {
+                        Picker("Кому отправить", selection: $reportRecipient) {
+                            Text("Пользователю").tag(AdminGsmReportRecipient.user)
+                            if adminEmail != nil {
+                                Text("Только мне").tag(AdminGsmReportRecipient.me)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(isSubmitting)
+                        LabeledContent("Почта получателя", value: reportRecipient == .me ? adminEmail ?? "" : user.email)
+                            .textSelection(.enabled)
+                    } header: {
+                        Text("Получатель")
+                    } footer: {
+                        Text(reportRecipient == .me
+                             ? "Отчёт будет отправлен только на вашу почту. Пользователь не получит письмо."
+                             : "Отчёт будет отправлен только на почту пользователя.")
+                    }
                     Section("Период отчёта") {
                         Picker("Месяц", selection: $month) {
                             ForEach(1...12, id: \.self) { value in
-                                Text(Calendar(identifier: .gregorian).standaloneMonthSymbols[value - 1].capitalized).tag(value)
+                                Text(Self.monthNames[value - 1]).tag(value)
                             }
                         }
                         Picker("Год", selection: $year) {
@@ -121,7 +154,8 @@ struct AdminUserSupportSheet: View {
             .interactiveDismissDisabled(isSubmitting)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Закрыть") { dismiss() }.disabled(isSubmitting)
+                    ModalCloseButton { dismiss() }
+                        .disabled(isSubmitting)
                 }
             }
         }
@@ -134,7 +168,8 @@ struct AdminUserSupportSheet: View {
         defer { isSubmitting = false }
         let success = await store.supportAction(
             user: user, action: action, email: normalizedEmail,
-            month: String(format: "%04d-%02d", year, month)
+            month: String(format: "%04d-%02d", year, month),
+            reportRecipient: reportRecipient
         )
         if success { dismiss() } else { errorMessage = store.errorMessage ?? "Не удалось выполнить действие." }
     }

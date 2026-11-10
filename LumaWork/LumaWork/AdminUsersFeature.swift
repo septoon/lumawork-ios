@@ -243,16 +243,20 @@ struct AdminUsersAPI {
         return AdminUserRecord(raw: raw)
     }
 
-    func performSupportAction(userID: String, action: AdminUserSupportAction, month: String, token: String) async throws {
+    func performSupportAction(userID: String, action: AdminUserSupportAction, month: String, reportRecipient: AdminGsmReportRecipient, token: String) async throws -> String? {
         let response = try await http.request(
             url(path: "/api/v2/admin/users/\(userID)/\(action.endpoint)"), method: "POST",
-            body: action == .gsmReport ? ["month": month] : [:], authToken: token,
+            body: action == .gsmReport ? ["month": month, "recipient": reportRecipient.rawValue] : [:], authToken: token,
             timeoutInterval: action == .gsmReport ? 210 : 30
         )
         let raw = response.json as? [String: Any] ?? [:]
         if action == .gsmReport && (!(raw["success"] as? Bool ?? false) || !(raw["sent"] as? Bool ?? false)) {
             throw AppServiceError.message("Отправка отчёта не подтверждена.")
         }
+        if action == .gsmReport && (raw["recipient"] as? String ?? "user") != reportRecipient.rawValue {
+            throw AppServiceError.message("Сервер не подтвердил выбранного получателя отчёта.")
+        }
+        return raw["message"] as? String
     }
 
     private func url(path: String) -> URL {
@@ -412,7 +416,7 @@ final class AdminUsersStore {
         }
     }
 
-    func supportAction(user: AdminUserRecord, action: AdminUserSupportAction, email: String, month: String) async -> Bool {
+    func supportAction(user: AdminUserRecord, action: AdminUserSupportAction, email: String, month: String, reportRecipient: AdminGsmReportRecipient = .user) async -> Bool {
         guard !isLoading, let token, !token.isEmpty else { return false }
         isLoading = true
         errorMessage = nil
@@ -423,10 +427,10 @@ final class AdminUsersStore {
                 replace(try await api.changeEmail(user: user, email: email, token: token))
                 notice = "Почта изменена. Пользователю нужно войти заново."
             } else {
-                try await api.performSupportAction(userID: user.id, action: action, month: month, token: token)
+                let message = try await api.performSupportAction(userID: user.id, action: action, month: month, reportRecipient: reportRecipient, token: token)
                 switch action {
                 case .loginCode: notice = "Код входа отправлен на \(user.email)."
-                case .gsmReport: notice = "ГСМ-отчёт за \(month) отправлен на \(user.email)."
+                case .gsmReport: notice = message ?? "ГСМ-отчёт за \(month) отправлен на \(user.email)."
                 case .revokeSessions: notice = "Сессии завершены. Пользователю нужно войти заново."
                 case .email: break
                 }
@@ -489,6 +493,7 @@ struct AdminUsersScreen: View {
     @State private var overviewStore: AdminOverviewStore
     @State private var searchText = ""
     @State private var selectedFilter: AdminUsersFilter = .all
+    @State private var sortOrder: AdminUsersSortOrder = .activity
     @State private var updateEmailTarget: AdminUpdateEmailInitialTarget?
 
     private let currentUser: AppUser?
@@ -526,21 +531,12 @@ struct AdminUsersScreen: View {
     private var filteredUsers: [AdminUserRecord] {
         let query = normalizedAdminUserSearchText(searchText)
         return store.users.filter { user in
-            switch selectedFilter {
-            case .all:
-                break
-            case .admins:
-                guard user.isAdmin else { return false }
-            case .active:
-                guard user.isRecentlyActive, !user.effectiveIsBlocked else { return false }
-            case .blocked:
-                guard user.effectiveIsBlocked else { return false }
-            }
+            guard selectedFilter.includes(user) else { return false }
             guard !query.isEmpty else { return true }
-            return [user.displayName, user.email, user.role, user.jobTitle]
+            return [user.displayName, user.email, user.role, user.jobTitle, user.profile?.city ?? "", user.appVersionDisplay]
                 .map(normalizedAdminUserSearchText)
                 .contains { $0.contains(query) }
-        }
+        }.sorted(by: sortOrder.precedes)
     }
 
     var body: some View {
@@ -565,8 +561,18 @@ struct AdminUsersScreen: View {
 
     private var adminMenu: some View {
         Form {
-            if can(.viewOverview) {
-                Section("Система") {
+            Section("Система") {
+                NavigationLink {
+                    AdminApplicationScreen()
+                } label: {
+                    AdminNavigationRow(
+                        title: "Приложение",
+                        subtitle: "Версии iOS и Android, история обновлений",
+                        systemImage: "app.badge",
+                        tint: AppTheme.primaryTint
+                    )
+                }
+                if can(.viewOverview) {
                     NavigationLink {
                         AdminOverviewDetailScreen(
                             store: overviewStore,
@@ -777,11 +783,11 @@ struct AdminUsersScreen: View {
     }
 
     private var usersContent: some View {
-        AppScreen {
-            AdminUsersOverview(users: store.users)
+        AppScreen(bottomContentPadding: 88) {
+            AdminUsersOverview(users: store.users, selection: $selectedFilter)
 
             if can(.notifyUsers) {
-                AdminUpdateEmailCard(users: store.users) {
+                AdminUpdateEmailCard {
                     updateEmailTarget = .outdated
                 }
             }
@@ -793,17 +799,23 @@ struct AdminUsersScreen: View {
                 AppNoticeBanner(text: notice, tint: AppTheme.primaryTint)
             }
 
-            AppSectionHeader(
-                title: "Пользователи",
-                caption: "Показано \(filteredUsers.count) из \(store.users.count)"
-            )
-
-            Picker("Фильтр пользователей", selection: $selectedFilter) {
-                ForEach(AdminUsersFilter.allCases) { filter in
-                    Text(filter.title).tag(filter)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Показано \(filteredUsers.count) из \(store.users.count)")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.mutedTint)
+                Spacer()
+                Menu {
+                    Picker("Сортировка", selection: $sortOrder) {
+                        ForEach(AdminUsersSortOrder.allCases) { order in
+                            Text(order.title).tag(order)
+                        }
+                    }
+                } label: {
+                    Label(sortOrder.title, systemImage: "arrow.up.arrow.down")
+                        .font(.caption.weight(.semibold))
                 }
+                .accessibilityLabel("Сортировка пользователей: \(sortOrder.title)")
             }
-            .pickerStyle(.segmented)
 
             if store.isLoading && store.users.isEmpty {
                 AppLoadingView(title: "Загружаю пользователей")
@@ -827,6 +839,7 @@ struct AdminUsersScreen: View {
                                 user: user,
                                 store: store,
                                 currentUserID: currentUser?.id,
+                                currentUserEmail: currentUser?.email,
                                 permissions: currentUser?.adminPermissionSet ?? []
                             )
                         } label: {
@@ -845,7 +858,7 @@ struct AdminUsersScreen: View {
         }
         .navigationTitle("Пользователи")
         .navigationBarTitleDisplayMode(.inline)
-        .appNativeSearch(text: $searchText, prompt: "Поиск пользователей")
+        .appNativeSearch(text: $searchText, prompt: "Имя, почта, город или версия")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -937,6 +950,45 @@ private enum AdminUsersFilter: String, CaseIterable, Identifiable {
         case .blocked: "Блок"
         }
     }
+
+    func includes(_ user: AdminUserRecord) -> Bool {
+        switch self {
+        case .all: true
+        case .admins: user.isAdmin
+        case .active: user.isRecentlyActive && !user.effectiveIsBlocked
+        case .blocked: user.effectiveIsBlocked
+        }
+    }
+
+}
+
+private enum AdminUsersSortOrder: String, CaseIterable, Identifiable {
+    case activity, name, registration
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .activity: "По активности"
+        case .name: "По имени"
+        case .registration: "По регистрации"
+        }
+    }
+
+    func precedes(_ lhs: AdminUserRecord, _ rhs: AdminUserRecord) -> Bool {
+        switch self {
+        case .activity:
+            let left = lhs.lastActiveAt ?? lhs.registeredAt ?? .distantPast
+            let right = rhs.lastActiveAt ?? rhs.registeredAt ?? .distantPast
+            if left != right { return left > right }
+        case .registration:
+            let left = lhs.registeredAt ?? .distantPast
+            let right = rhs.registeredAt ?? .distantPast
+            if left != right { return left > right }
+        case .name: break
+        }
+        let comparison = lhs.displayName.localizedStandardCompare(rhs.displayName)
+        return comparison == .orderedSame ? lhs.id < rhs.id : comparison == .orderedAscending
+    }
 }
 
 private enum AdminUpdateEmailInitialTarget: Identifiable, Hashable {
@@ -965,42 +1017,34 @@ private enum AdminUpdateEmailMode: String, CaseIterable, Identifiable {
 }
 
 private struct AdminUpdateEmailCard: View {
-    let users: [AdminUserRecord]
     let action: () -> Void
 
-    private var outdatedCount: Int {
-        users.filter {
-            adminIsOlderAppVersion(
-                $0.appVersion,
-                build: $0.appBuild,
-                than: AppBuildIdentity.version,
-                build: AppBuildIdentity.build
-            )
-        }.count
-    }
-
     var body: some View {
-        AppCard {
-            HStack(spacing: 14) {
+        Button(action: action) {
+            HStack(spacing: 12) {
                 Image(systemName: "envelope.badge")
-                    .font(.title3.weight(.semibold))
+                    .font(.title3)
                     .foregroundStyle(AppTheme.primaryTint)
-                    .frame(width: 42, height: 42)
-                    .background(AppTheme.primaryTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 13))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Сообщить об обновлении")
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(AppTheme.ink)
-                    Text("Версия \(AppBuildIdentity.display) • устаревших: \(outdatedCount)")
+                    Text("Выбрать получателей и подготовить письмо")
                         .font(.caption)
                         .foregroundStyle(AppTheme.mutedTint)
                 }
                 Spacer(minLength: 4)
-                Button("Создать", action: action)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.mutedTint)
             }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .background(AppTheme.cardSurface.opacity(0.82), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
     }
 }
 
@@ -1098,7 +1142,7 @@ private struct AdminUpdateEmailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") { dismiss() }
+                    ModalCloseButton { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Отправить") {
@@ -1154,105 +1198,136 @@ private func adminIsOlderAppVersion(
 
 private struct AdminUsersOverview: View {
     let users: [AdminUserRecord]
+    @Binding var selection: AdminUsersFilter
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                metric("Всего", value: users.count, icon: "person.2.fill", tint: AppTheme.primaryTint)
-                Divider().frame(height: 52)
-                metric("Админы", value: users.filter(\.isAdmin).count, icon: "checkmark.shield.fill", tint: AppTheme.secondaryTint)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ForEach(AdminUsersFilter.allCases) { filter in
+                    filterButton(filter)
+                }
             }
-            Divider()
-            HStack(spacing: 0) {
-                metric("Активны", value: users.filter { $0.isRecentlyActive && !$0.effectiveIsBlocked }.count, icon: "bolt.fill", tint: .green)
-                Divider().frame(height: 52)
-                metric("Блок", value: users.filter(\.effectiveIsBlocked).count, icon: "lock.fill", tint: AppTheme.dangerTint)
-            }
+            Text("Активные — вход за последние 7 дней")
+                .font(.caption2)
+                .foregroundStyle(AppTheme.mutedTint)
         }
-        .background(AppTheme.cardSurface.opacity(0.82), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
     }
 
-    private func metric(_ title: String, value: Int, icon: String, tint: Color) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(tint)
-                .frame(width: 32, height: 32)
-                .background(tint.opacity(0.12), in: Circle())
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value.formatted()).font(.title3.weight(.bold)).foregroundStyle(AppTheme.ink)
-                Text(title).font(.caption2).foregroundStyle(AppTheme.mutedTint)
+    private func filterButton(_ filter: AdminUsersFilter) -> some View {
+        let isSelected = selection == filter
+        let count = users.filter { filter.includes($0) }.count
+        let fill = isSelected
+            ? AnyShapeStyle(AppTheme.primaryTint.opacity(0.14))
+            : AnyShapeStyle(AppTheme.cardSurface.opacity(0.82))
+        let border = isSelected ? AppTheme.primaryTint.opacity(0.6) : AppTheme.border
+        let traits: AccessibilityTraits = isSelected ? .isSelected : []
+
+        return Button {
+            selection = filter
+            AppHaptics.trigger()
+        } label: {
+            VStack(spacing: 4) {
+                Text(count.formatted())
+                    .font(.title2.weight(.bold))
+                    .monospacedDigit()
+                Text(filter.title)
+                    .font(.caption2.weight(.medium))
             }
-            Spacer(minLength: 0)
+            .foregroundStyle(isSelected ? AppTheme.primaryTint : AppTheme.ink)
+            .frame(maxWidth: .infinity, minHeight: 70)
+            .background(fill, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(border, lineWidth: 1))
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, minHeight: 70)
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(filter.title): \(count)")
+        .accessibilityAddTraits(traits)
     }
+
 }
 
 private struct AdminUserRow: View {
     let user: AdminUserRecord
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack(alignment: .bottomTrailing) {
-                ProfileAvatar(size: 46, avatarUrl: user.avatarUrl)
-                Circle()
-                    .fill(statusTint)
-                    .frame(width: 11, height: 11)
-                    .overlay(Circle().stroke(AppTheme.cardSurface, lineWidth: 2))
-            }
+        HStack(alignment: .top, spacing: 12) {
+            ProfileAvatar(size: 44, avatarUrl: user.avatarUrl)
+                .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
                     Text(user.displayName)
-                        .font(.headline.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(AppTheme.ink)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
+                    Spacer(minLength: 0)
                     if user.isAdmin {
-                        AdminStatusPill(
-                            text: user.isProtectedAdmin ? "owner" : "admin",
-                            tint: AppTheme.primaryTint
-                        )
+                        AdminStatusPill(text: user.isProtectedAdmin ? "Владелец" : "Админ", tint: AppTheme.primaryTint)
                     }
                     if user.effectiveIsBlocked {
                         AdminStatusPill(text: "блок", tint: AppTheme.dangerTint)
                     }
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AppTheme.mutedTint)
                 }
 
                 Text(user.email)
-                    .font(.subheadline)
+                    .font(.caption)
                     .foregroundStyle(AppTheme.mutedTint)
                     .lineLimit(1)
 
-                Text(user.isAdmin ? "Разрешений: \(user.permissionSet.count)" : user.jobTitle)
-                    .font(.caption2)
-                    .foregroundStyle(AppTheme.mutedTint)
-                    .lineLimit(1)
-            }
+                if !profileSummary.isEmpty {
+                    Text(profileSummary)
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.mutedTint)
+                        .lineLimit(2)
+                }
 
-            Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 7) {
-                Text(adminFormattedDate(user.lastActiveAt) ?? "Нет активности")
-                    .font(.caption2)
-                    .foregroundStyle(AppTheme.mutedTint)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppTheme.mutedTint.opacity(0.75))
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        versionLabel.fixedSize()
+                        Spacer(minLength: 0)
+                        activityLabel.fixedSize()
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        versionLabel
+                        activityLabel
+                    }
+                }
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 13)
+        .padding(.vertical, 14)
         .contentShape(Rectangle())
     }
 
-    private var statusTint: Color {
-        if user.effectiveIsBlocked { return AppTheme.dangerTint }
-        return user.isRecentlyActive ? .green : AppTheme.mutedTint.opacity(0.5)
+    private var profileSummary: String {
+        [UserProfileData.clean(user.profile?.jobTitle), UserProfileData.clean(user.profile?.city)]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    private var versionLabel: some View {
+        Label(user.appVersionDisplay, systemImage: "app")
+            .font(.caption2)
+            .foregroundStyle(AppTheme.primaryTint)
+    }
+
+    private var activityLabel: some View {
+        Label(activityDescription, systemImage: "clock")
+            .font(.caption2)
+            .foregroundStyle(AppTheme.mutedTint)
+    }
+
+    private var activityDescription: String {
+        guard let date = user.lastActiveAt else { return "Нет данных об активности" }
+        let time = date.formatted(.dateTime.hour().minute().locale(AppLocale.russian))
+        if Calendar.current.isDateInToday(date) { return "Сегодня, \(time)" }
+        if Calendar.current.isDateInYesterday(date) { return "Вчера, \(time)" }
+        return date.formatted(.dateTime.day().month(.abbreviated).year().hour().minute().locale(AppLocale.russian))
     }
 }
 
@@ -1269,6 +1344,32 @@ private enum AdminUserSheetDestination: String, Identifiable {
     var id: String { rawValue }
 }
 
+private enum AdminUserDetailPage: Hashable {
+    case profile, activity, vehicle, reports, access, support
+
+    var title: String {
+        switch self {
+        case .profile: "Профиль"
+        case .activity: "Устройства и активность"
+        case .vehicle: "Транспорт"
+        case .reports: "ГСМ-отчёты"
+        case .access: "Доступ и безопасность"
+        case .support: "Поддержка"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .profile: "person.text.rectangle"
+        case .activity: "iphone.and.arrow.forward"
+        case .vehicle: "car.fill"
+        case .reports: "doc.text"
+        case .access: "lock.shield"
+        case .support: "questionmark.bubble"
+        }
+    }
+}
+
 private struct AdminUserDetailScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var user: AdminUserRecord
@@ -1278,198 +1379,57 @@ private struct AdminUserDetailScreen: View {
 
     let store: AdminUsersStore
     let currentUserID: String?
+    let currentUserEmail: String?
     let permissions: Set<AdminPermission>
 
     init(
         user: AdminUserRecord,
         store: AdminUsersStore,
         currentUserID: String?,
+        currentUserEmail: String?,
         permissions: Set<AdminPermission>
     ) {
         _user = State(initialValue: user)
         self.store = store
         self.currentUserID = currentUserID
+        self.currentUserEmail = currentUserEmail
         self.permissions = permissions
     }
 
     var body: some View {
         AppScreen {
-            AppCard {
-                HStack(spacing: 14) {
-                    ProfileAvatar(size: 62, avatarUrl: user.avatarUrl)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(user.displayName)
-                            .textSelection(.enabled)
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(AppTheme.ink)
-                        Text(user.email)
-                            .textSelection(.enabled)
-                            .contextMenu { Button("Скопировать почту", systemImage: "doc.on.doc") { UIPasteboard.general.string = user.email } }
-                            .font(.subheadline)
-                            .foregroundStyle(AppTheme.mutedTint)
-                        HStack(spacing: 8) {
-                            AdminStatusPill(text: user.isAdmin ? "admin" : "user", tint: AppTheme.primaryTint)
-                            if user.isProtectedAdmin {
-                                AdminStatusPill(text: "защищён", tint: AppTheme.secondaryTint)
-                            }
-                            if user.effectiveIsBlocked {
-                                AdminStatusPill(text: "заблокирован", tint: AppTheme.dangerTint)
-                            }
-                        }
-                    }
+            userHeader
+            AdminInfoCard(rows: summaryRows)
+
+            AppSectionHeader(title: "Информация")
+            groupedRows {
+                pageLink(.profile, subtitle: "Личные и рабочие данные")
+                rowDivider
+                pageLink(.activity, subtitle: devicesSummary)
+                if !userVehicleRows.isEmpty {
+                    rowDivider
+                    pageLink(.vehicle, subtitle: "Автомобиль и адреса")
+                }
+                rowDivider
+                pageLink(.reports, subtitle: "Последние отчёты и отправка")
+            }
+
+            AppSectionHeader(title: "Управление")
+            groupedRows {
+                pageLink(.access, subtitle: "Учётная запись, права и блокировка")
+                if canNotify || canEdit {
+                    rowDivider
+                    pageLink(.support, subtitle: "Почта, вход и уведомления")
                 }
             }
 
-            Button {
-                UIPasteboard.general.string = userSummary
-                AppHaptics.trigger()
-            } label: {
-                Label("Скопировать все данные", systemImage: "doc.on.doc")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.bordered)
-
-            AdminInfoCard(rows: userInfoRows)
-
-            AppSectionHeader(title: "Устройства", caption: "Запуски приложения под этим аккаунтом")
-            if let devices = user.devices, !devices.isEmpty {
-                ForEach(devices) { device in
-                    AdminInfoCard(rows: deviceInfoRows(device))
-                }
-            } else if isRefreshingUser {
-                AppCard {
-                    ProgressView("Загружаются сведения об устройствах")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            } else {
-                AppCard {
-                    Text(store.errorMessage == nil
-                         ? "Сведения об устройствах ещё не поступали. Они появятся после запуска обновлённого приложения."
-                         : "Не удалось загрузить сведения об устройствах.")
-                        .font(.subheadline)
-                        .foregroundStyle(AppTheme.mutedTint)
-                }
-            }
-
-            if !userProfileRows.isEmpty {
-                AppSectionHeader(title: "Профиль", caption: "Данные, доступные для этого пользователя")
-                AdminInfoCard(rows: userProfileRows)
-            }
-
-            if !userVehicleRows.isEmpty {
-                AppSectionHeader(title: "Транспорт")
-                AdminInfoCard(rows: userVehicleRows)
-            }
-
-            if user.isAdmin {
-                AppSectionHeader(
-                    title: "Права",
-                    caption: user.isProtectedAdmin ? "Полный доступ владельца" : "Назначено: \(user.permissionSet.count)"
-                )
-                AdminPermissionsSummary(permissions: user.permissionSet)
-                    .textSelection(.enabled)
-            }
-
-            if let reports = user.recentGsmReports, !reports.isEmpty {
-                AppSectionHeader(title: "Последние ГСМ-отчёты", caption: "Пять последних попыток формирования")
-                ForEach(reports) { report in
-                    AdminInfoCard(rows: [
-                        AdminInfoRow(title: "Период", value: report.month),
-                        AdminInfoRow(title: "Статус", value: report.statusTitle),
-                        report.sentToEmail.map { AdminInfoRow(title: "Получатель", value: $0) },
-                        adminFormattedDate(report.completedAt ?? report.createdAt).map { AdminInfoRow(title: "Дата", value: $0) }
-                    ].compactMap { $0 })
-                }
-            }
-
-            if canNotify || canEdit || canRevokeSessions || canSendReports || canManageAccess || canBlock || canDelete {
-                AppSectionHeader(title: "Управление")
-                VStack(spacing: 0) {
-                    if canNotify {
-                        actionRow("Отправить код входа", systemImage: "key.fill") { sheet = .loginCode }
-                            .disabled(user.effectiveIsBlocked)
-                        Divider().padding(.leading, 54)
-                    }
-                    if canSendReports {
-                        actionRow("Отправить ГСМ-отчёт", systemImage: "envelope.fill") { sheet = .gsmReport }
-                        Divider().padding(.leading, 54)
-                    }
-                    if canEdit {
-                        actionRow("Изменить почту", systemImage: "at") { sheet = .email }
-                        Divider().padding(.leading, 54)
-                    }
-                    if canRevokeSessions {
-                        actionRow("Выйти со всех устройств", systemImage: "rectangle.portrait.and.arrow.right") { sheet = .revokeSessions }
-                        Divider().padding(.leading, 54)
-                    }
-                    if canNotify {
-                        actionRow("Сообщить об обновлении", systemImage: "envelope.badge") {
-                            sheet = .updateEmail
-                        }
-                    }
-
-                    if canNotify && (canManageAccess || canBlock || canDelete) { Divider().padding(.leading, 54) }
-
-                    if canManageAccess {
-                        actionRow("Роль и разрешения", systemImage: "checkmark.shield") {
-                            sheet = .access
-                        }
-                    }
-
-                    if canManageAccess && (canBlock || canDelete) { Divider().padding(.leading, 54) }
-
-                    if canBlock {
-                        if user.effectiveIsBlocked {
-                            actionRow("Разблокировать", systemImage: "lock.open.fill") {
-                                Task { await updateBlock(until: nil) }
-                            }
-                        } else {
-                            Menu {
-                                Button("На 1 час") { Task { await updateBlock(until: Date().addingTimeInterval(3_600)) } }
-                                Button("На 1 день") { Task { await updateBlock(until: Date().addingTimeInterval(86_400)) } }
-                                Button("На 7 дней") { Task { await updateBlock(until: Date().addingTimeInterval(604_800)) } }
-                                Button("На 30 дней") { Task { await updateBlock(until: Date().addingTimeInterval(2_592_000)) } }
-                                Button("Выбрать дату") { sheet = .blockUntil }
-                            } label: {
-                                AdminActionRowLabel(title: "Заблокировать", systemImage: "lock.fill", tint: AppTheme.dangerTint)
-                            }
-                        }
-                    }
-
-                    if canDelete && (canManageAccess || canBlock) { Divider().padding(.leading, 54) }
-
-                    if canDelete {
-                        Button(role: .destructive) {
-                            sheet = .delete
-                        } label: {
-                            AdminActionRowLabel(title: "Удалить пользователя", systemImage: "trash.fill", tint: AppTheme.dangerTint)
-                        }
-                    }
-                }
-                .background(AppTheme.cardSurface.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
-            }
-
-            if store.isLoading { ProgressView("Выполняется действие") }
-            if let notice = store.notice { AppNoticeBanner(text: notice, tint: AppTheme.primaryTint) }
-            if let error = store.errorMessage {
-                AppNoticeBanner(text: error, tint: AppTheme.dangerTint, isCritical: true)
-            }
+            operationStatus
         }
         .navigationTitle(user.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .appSidebarBackButton()
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task { await refreshUser() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .disabled(store.isLoading || isRefreshingUser)
-                .accessibilityLabel("Обновить пользователя")
-            }
+            ToolbarItem(placement: .topBarTrailing) { userTools }
         }
         .sheet(item: $sheet) { destination in
             Group {
@@ -1479,7 +1439,7 @@ private struct AdminUserDetailScreen: View {
                 case .loginCode:
                     AdminUserSupportSheet(user: user, store: store, action: .loginCode)
                 case .gsmReport:
-                    AdminUserSupportSheet(user: user, store: store, action: .gsmReport)
+                    AdminUserSupportSheet(user: user, store: store, action: .gsmReport, adminEmail: currentUserEmail)
                 case .revokeSessions:
                     AdminUserSupportSheet(user: user, store: store, action: .revokeSessions)
                 case .updateEmail:
@@ -1503,6 +1463,274 @@ private struct AdminUserDetailScreen: View {
         }
         .refreshable { await refreshUser() }
         .task { await refreshUser() }
+    }
+
+    private var userHeader: some View {
+        AppCard {
+            HStack(spacing: 14) {
+                ProfileAvatar(size: 62, avatarUrl: user.avatarUrl)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(user.displayName)
+                        .textSelection(.enabled)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(AppTheme.ink)
+                    Text(user.email)
+                        .textSelection(.enabled)
+                        .contextMenu { Button("Скопировать почту", systemImage: "doc.on.doc") { UIPasteboard.general.string = user.email } }
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.mutedTint)
+                    HStack(spacing: 8) {
+                        AdminStatusPill(text: user.isAdmin ? "Администратор" : "Пользователь", tint: AppTheme.primaryTint)
+                        if user.isProtectedAdmin {
+                            AdminStatusPill(text: "защищён", tint: AppTheme.secondaryTint)
+                        }
+                        if user.effectiveIsBlocked {
+                            AdminStatusPill(text: "заблокирован", tint: AppTheme.dangerTint)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var summaryRows: [AdminInfoRow] {
+        [
+            adminFormattedDate(user.lastActiveAt).map { AdminInfoRow(title: "Последняя активность", value: $0) },
+            AdminInfoRow(title: "Версия приложения", value: user.appVersionDisplay)
+        ].compactMap { $0 }
+    }
+
+    private var devicesSummary: String {
+        guard let devices = user.devices else {
+            return isRefreshingUser ? "Загрузка сведений" : "Версии, запуски и сессии"
+        }
+        return "Устройств: \(devices.count) · Сессий: \(user.activeSessions.map { $0.formatted() } ?? "—")"
+    }
+
+    private var userTools: some View {
+        Menu {
+            Button("Обновить пользователя", systemImage: "arrow.clockwise") {
+                Task { await refreshUser() }
+            }
+            .disabled(store.isLoading || isRefreshingUser)
+            Button("Скопировать все данные", systemImage: "doc.on.doc") {
+                UIPasteboard.general.string = userSummary
+                AppHaptics.trigger()
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .accessibilityLabel("Действия с пользователем")
+    }
+
+    private func pageLink(_ page: AdminUserDetailPage, subtitle: String) -> some View {
+        NavigationLink {
+            detailPage(page)
+        } label: {
+            HStack(spacing: 12) {
+                AdminNavigationRow(
+                    title: page.title,
+                    subtitle: subtitle,
+                    systemImage: page.systemImage,
+                    tint: AppTheme.primaryTint
+                )
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppTheme.mutedTint)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func groupedRows<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0, content: content)
+            .background(AppTheme.cardSurface.opacity(0.82), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(AppTheme.border, lineWidth: 1))
+    }
+
+    private var rowDivider: some View {
+        Divider().padding(.leading, 60)
+    }
+
+    @ViewBuilder
+    private var operationStatus: some View {
+        if store.isLoading { ProgressView("Выполняется действие") }
+        if let notice = store.notice { AppNoticeBanner(text: notice, tint: AppTheme.primaryTint) }
+        if let error = store.errorMessage {
+            AppNoticeBanner(text: error, tint: AppTheme.dangerTint, isCritical: true)
+        }
+    }
+
+    private func detailPage(_ page: AdminUserDetailPage) -> some View {
+        AppScreen {
+            switch page {
+            case .profile:
+                AppSectionHeader(title: "Контакты", caption: user.displayName)
+                AdminInfoCard(rows: [AdminInfoRow(title: "Почта для входа", value: user.email)])
+                if !userProfileRows.isEmpty {
+                    AppSectionHeader(title: "Личные и рабочие данные")
+                    AdminInfoCard(rows: userProfileRows)
+                }
+                if canEdit {
+                    groupedRows {
+                        actionRow("Изменить почту", systemImage: "at") { sheet = .email }
+                    }
+                }
+            case .activity:
+                activityContent
+            case .vehicle:
+                AppSectionHeader(title: "Транспорт и адреса", caption: user.displayName)
+                AdminInfoCard(rows: userVehicleRows)
+            case .reports:
+                reportsContent
+            case .access:
+                accessContent
+            case .support:
+                supportContent
+            }
+            operationStatus
+        }
+        .navigationTitle(page.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .appSidebarBackButton()
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { userTools }
+        }
+        .refreshable { await refreshUser() }
+    }
+
+    @ViewBuilder
+    private var activityContent: some View {
+        AppSectionHeader(title: "Активность", caption: user.displayName)
+        AdminInfoCard(rows: [
+            user.activeSessions.map { AdminInfoRow(title: "Активных сессий", value: $0.formatted()) },
+            adminFormattedDate(user.lastActiveAt).map { AdminInfoRow(title: "Последняя активность", value: $0) },
+            AdminInfoRow(title: "Версия приложения", value: user.appVersionDisplay),
+            adminFormattedDate(user.appVersionSeenAt).map { AdminInfoRow(title: "Версия получена", value: $0) }
+        ].compactMap { $0 })
+
+        AppSectionHeader(title: "Устройства", caption: "Запуски приложения под этим аккаунтом")
+        if let devices = user.devices, !devices.isEmpty {
+            ForEach(devices) { device in
+                AdminInfoCard(rows: deviceInfoRows(device))
+            }
+        } else if isRefreshingUser {
+            ProgressView("Загружаются сведения об устройствах")
+        } else {
+            AppCard {
+                Text(store.errorMessage == nil
+                     ? "Сведения об устройствах ещё не поступали. Они появятся после запуска обновлённого приложения."
+                     : "Не удалось загрузить сведения об устройствах.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.mutedTint)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var reportsContent: some View {
+        if canSendReports {
+            groupedRows {
+                actionRow("Отправить ГСМ-отчёт", systemImage: "envelope.fill") { sheet = .gsmReport }
+            }
+        }
+        AppSectionHeader(title: "Последние ГСМ-отчёты", caption: "Пять последних попыток формирования")
+        if let reports = user.recentGsmReports, !reports.isEmpty {
+            ForEach(reports) { report in
+                AdminInfoCard(rows: [
+                    AdminInfoRow(title: "Период", value: report.month),
+                    AdminInfoRow(title: "Статус", value: report.statusTitle),
+                    report.sentToEmail.map { AdminInfoRow(title: "Получатель", value: $0) },
+                    adminFormattedDate(report.completedAt ?? report.createdAt).map { AdminInfoRow(title: "Дата", value: $0) }
+                ].compactMap { $0 })
+            }
+        } else if isRefreshingUser {
+            ProgressView("Загружаются сведения об отчётах")
+        } else {
+            AppCard {
+                Text(store.errorMessage == nil ? "Попыток формирования отчётов пока нет." : "Не удалось загрузить сведения об отчётах.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.mutedTint)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var accessContent: some View {
+        AppSectionHeader(title: "Учётная запись", caption: user.displayName)
+        AdminInfoCard(rows: [
+            AdminInfoRow(title: "ID пользователя", value: user.id),
+            adminFormattedDate(user.registeredAt).map { AdminInfoRow(title: "Зарегистрирован", value: $0) },
+            AdminInfoRow(title: "Роль", value: user.isAdmin ? "Администратор" : "Пользователь"),
+            AdminInfoRow(title: "Блокировка", value: user.effectiveIsBlocked ? (adminFormattedDate(user.blockedUntil) ?? "Без срока") : "Нет")
+        ].compactMap { $0 })
+
+        if user.isAdmin {
+            AppSectionHeader(title: "Права", caption: user.isProtectedAdmin ? "Полный доступ владельца" : "Назначено: \(user.permissionSet.count)")
+            AdminPermissionsSummary(permissions: user.permissionSet)
+                .textSelection(.enabled)
+        }
+        if canManageAccess {
+            groupedRows {
+                actionRow("Роль и разрешения", systemImage: "checkmark.shield") { sheet = .access }
+            }
+        }
+        if canRevokeSessions || canBlock {
+            AppSectionHeader(title: "Безопасность")
+            groupedRows {
+                if canRevokeSessions {
+                    actionRow("Выйти со всех устройств", systemImage: "rectangle.portrait.and.arrow.right") { sheet = .revokeSessions }
+                }
+                if canRevokeSessions && canBlock { rowDivider }
+                if canBlock {
+                    if user.effectiveIsBlocked {
+                        actionRow("Разблокировать", systemImage: "lock.open.fill") {
+                            Task { await updateBlock(until: nil) }
+                        }
+                    } else {
+                        Menu {
+                            Button("На 1 час") { Task { await updateBlock(until: Date().addingTimeInterval(3_600)) } }
+                            Button("На 1 день") { Task { await updateBlock(until: Date().addingTimeInterval(86_400)) } }
+                            Button("На 7 дней") { Task { await updateBlock(until: Date().addingTimeInterval(604_800)) } }
+                            Button("На 30 дней") { Task { await updateBlock(until: Date().addingTimeInterval(2_592_000)) } }
+                            Button("Выбрать дату") { sheet = .blockUntil }
+                        } label: {
+                            AdminActionRowLabel(title: "Заблокировать", systemImage: "lock.fill", tint: AppTheme.dangerTint)
+                        }
+                    }
+                }
+            }
+        }
+        if canDelete {
+            AppSectionHeader(title: "Удаление учётной записи")
+            groupedRows {
+                Button(role: .destructive) { sheet = .delete } label: {
+                    AdminActionRowLabel(title: "Удалить пользователя", systemImage: "trash.fill", tint: AppTheme.dangerTint)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var supportContent: some View {
+        AppSectionHeader(title: "Помощь пользователю", caption: user.email)
+        groupedRows {
+            if canNotify {
+                actionRow("Отправить код входа", systemImage: "key.fill") { sheet = .loginCode }
+                    .disabled(user.effectiveIsBlocked)
+                rowDivider
+                actionRow("Сообщить об обновлении", systemImage: "envelope.badge") { sheet = .updateEmail }
+            }
+            if canNotify && canEdit { rowDivider }
+            if canEdit {
+                actionRow("Изменить почту", systemImage: "at") { sheet = .email }
+            }
+        }
     }
 
     private var isMutableTarget: Bool {
@@ -1600,9 +1828,6 @@ private struct AdminUserDetailScreen: View {
         return [
             profileRow("Автомобиль", profile.vehicleModel),
             profileRow("Госномер", profile.vehiclePlate),
-            profileRow("VIN", profile.vehicleVin),
-            profileRow("СТС", profile.vehicleSts),
-            profileRow("ПТС", profile.vehiclePts),
             profileRow("Цвет", profile.vehicleColor),
             profileRow("Объём двигателя", profile.engineVolumeCm3),
             profileRow("Мощность двигателя", profile.enginePowerHp),
@@ -1720,7 +1945,7 @@ private struct AdminUserAccessSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") { dismiss() }
+                    ModalCloseButton { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Сохранить") {
@@ -1857,7 +2082,7 @@ private struct AdminUserDeleteSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") { dismiss() }
+                    ModalCloseButton { dismiss() }
                         .disabled(isDeleting)
                 }
             }
@@ -1903,7 +2128,7 @@ private struct AdminUserBlockDateSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Отмена") { dismiss() }
+                    ModalCloseButton { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Применить") {
@@ -2023,9 +2248,9 @@ private func adminUserProfile(from raw: [String: Any]) -> UserProfileData {
         workEmail: adminString(raw, keys: ["workEmail", "work_email"]),
         vehicleModel: adminString(raw, keys: ["vehicleModel", "vehicle_model"]),
         vehiclePlate: adminString(raw, keys: ["vehiclePlate", "vehicle_plate", "licensePlate", "license_plate"]),
-        vehicleVin: adminString(raw, keys: ["vehicleVin", "vehicle_vin", "vin"]),
-        vehicleSts: adminString(raw, keys: ["vehicleSts", "vehicle_sts", "sts"]),
-        vehiclePts: adminString(raw, keys: ["vehiclePts", "vehicle_pts", "pts"]),
+        vehicleVin: nil,
+        vehicleSts: nil,
+        vehiclePts: nil,
         vehicleColor: adminString(raw, keys: ["vehicleColor", "vehicle_color", "color"]),
         engineVolumeCm3: adminString(raw, keys: ["engineVolumeCm3", "engine_volume_cm3"]),
         enginePowerHp: adminString(raw, keys: ["enginePowerHp", "engine_power_hp"]),
