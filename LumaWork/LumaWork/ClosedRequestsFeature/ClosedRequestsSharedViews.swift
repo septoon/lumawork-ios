@@ -1,5 +1,23 @@
 import SwiftUI
 
+struct ActiveRequestsEmptyState: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Image("ActiveRequestsEmpty")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 240, height: 240)
+                .accessibilityHidden(true)
+
+            Text("Активных заявок нет")
+                .font(.headline)
+                .foregroundStyle(AppTheme.mutedTint)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: 420)
+    }
+}
+
 struct SelectableTextAccordion: View {
     let title: String
     let text: String

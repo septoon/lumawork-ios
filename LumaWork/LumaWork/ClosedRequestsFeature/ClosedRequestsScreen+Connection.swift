@@ -460,20 +460,12 @@ extension ClosedRequestsScreen {
         }
     }
 
-    func simpleOneRequestsContent(
-        emptyTitle: String,
-        emptyMessage: String,
-        records: [ActiveRequestListItem]
-    ) -> some View {
+    func simpleOneRequestsContent(records: [ActiveRequestListItem]) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             if simpleOneStore.isLoading && records.isEmpty {
                 AppLoadingView(title: "Получаю список заявок SimpleOne")
             } else if records.isEmpty {
-                AppEmptyState(
-                    title: emptyTitle,
-                    message: emptyMessage,
-                    systemName: "checklist"
-                )
+                ActiveRequestsEmptyState()
             } else {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     ForEach(Array(records.enumerated()), id: \.element.id) { index, item in

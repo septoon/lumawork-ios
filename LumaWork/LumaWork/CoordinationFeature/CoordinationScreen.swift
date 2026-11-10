@@ -183,13 +183,7 @@ struct CoordinationScreen: View {
         if !hasCurrentScope || (store.isLoading && !store.hasCurrentSnapshot) {
             CoordinationLoadingCard()
         } else if visibleEngineers.isEmpty, store.hasCurrentSnapshot {
-            AppEmptyState(
-                title: "Активных заявок нет",
-                message: store.errorMessage == nil
-                    ? "В выбранном регионе нет активных заявок."
-                    : "В последних сохранённых данных нет активных заявок.",
-                systemName: "person.2.slash"
-            )
+            ActiveRequestsEmptyState()
         } else if visibleEngineers.isEmpty {
             AppEmptyState(
                 title: "Нет сохранённых данных",
@@ -251,13 +245,7 @@ struct CoordinationScreen: View {
             CoordinationLoadingCard()
         } else if visibleReturnEquipmentRequests.isEmpty,
                   store.hasReturnEquipmentSnapshot {
-            AppEmptyState(
-                title: "Заявок «Возврат ТО» нет",
-                message: store.returnEquipmentErrorMessage == nil
-                    ? "У текущего пользователя нет активных заявок этого типа."
-                    : "В последних сохранённых данных таких заявок нет.",
-                systemName: "shippingbox"
-            )
+            ActiveRequestsEmptyState()
         } else if visibleReturnEquipmentRequests.isEmpty {
             AppEmptyState(
                 title: "Нет сохранённых данных",

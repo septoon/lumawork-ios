@@ -594,13 +594,7 @@ private extension ClosedRequestsScreen {
                     .frame(maxWidth: .infinity, minHeight: 420, alignment: .center)
             } else {
                 VStack(alignment: .leading, spacing: 16) {
-                    simpleOneRequestsContent(
-                        emptyTitle: "Активных заявок нет",
-                        emptyMessage: simpleOneStore.isAuthorized
-                            ? "По текущему фильтру SimpleOne ничего не найдено."
-                            : "Войдите в SimpleOne, чтобы загрузить активные заявки.",
-                        records: filteredActiveRequestItemsCache
-                    )
+                    simpleOneRequestsContent(records: filteredActiveRequestItemsCache)
                 }
             }
         case .warehouse:
